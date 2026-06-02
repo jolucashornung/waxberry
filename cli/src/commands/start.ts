@@ -43,7 +43,7 @@ function printPrivacyNote(provider: string): void {
   }
 }
 
-export async function runStart(): Promise<void> {
+export async function ensureServicesRunning(): Promise<boolean> {
   if (!configExists()) {
     logger.info('No configuration found. Running setup...');
     console.log('');
@@ -61,8 +61,7 @@ export async function runStart(): Promise<void> {
 
     if (!pull) {
       logger.error('Model not available. Cannot start.');
-      process.exitCode = 1;
-      return;
+      return false;
     }
 
     pullOllamaModel(config.model);
@@ -75,8 +74,7 @@ export async function runStart(): Promise<void> {
   } catch (err) {
     spinner.fail('Failed to start services');
     logger.error((err as Error).message);
-    process.exitCode = 1;
-    return;
+    return false;
   }
 
   spinner.text = 'Waiting for services to be healthy...';
@@ -84,11 +82,23 @@ export async function runStart(): Promise<void> {
 
   if (!healthy) {
     spinner.fail('Services did not become healthy within 3 minutes');
+    return false;
+  }
+
+  spinner.succeed('All services started.');
+  return true;
+}
+
+export async function runStart(): Promise<void> {
+  const started = await ensureServicesRunning();
+  if (!started) {
     process.exitCode = 1;
     return;
   }
 
-  spinner.succeed('All services started.');
+  const config = loadConfig();
+  const providerDef = PROVIDERS[config.provider];
+
   console.log('');
   console.log('    ASR:         Whisper (base) — local');
   console.log(`    Translation: ${providerDef.name}${config.model ? ` (${config.model})` : ''}`);

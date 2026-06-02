@@ -12,10 +12,9 @@ npm install -g live-translate
 ## Quick Start
 
 ```bash
-live-translate config   # choose a translation provider (runs automatically on first start)
-live-translate start    # download models and start backend services
-live-translate          # press SPACE to record, SPACE again to translate
-live-translate stop     # stop services when done
+live-translate   # press SPACE to record, SPACE again to translate
+                 # downloads models and starts services automatically on first run
+live-translate stop   # stop services when done
 ```
 
 ## Commands
@@ -24,7 +23,7 @@ live-translate stop     # stop services when done
 |---------|-------------|
 | `live-translate` | Start translating (SPACE to start/stop recording, Q or Ctrl-C to quit) |
 | `live-translate config` | Configure your translation provider |
-| `live-translate start` | Download models and start backend services |
+| `live-translate start` | Download models and start backend services (runs automatically when needed) |
 | `live-translate stop` | Stop all backend services |
 | `live-translate status` | Show service health and active provider |
 | `live-translate doctor` | Check prerequisites |
@@ -65,7 +64,7 @@ Speech is recorded locally. Whisper transcribes it, the configured provider tran
 
 ### First Run
 
-`live-translate start` automatically:
+On first run, `live-translate` automatically:
 1. Downloads Piper voice models (~100 MB, English and Mandarin) to `~/.live-translate/voices/`
 2. Installs `sox` and `espeak-ng` if they are not already on your system
 3. Starts four backend services as local processes

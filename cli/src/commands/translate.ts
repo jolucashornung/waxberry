@@ -9,6 +9,7 @@ import { playAudio } from '../services/player.js';
 import { loadConfig, configExists } from '../services/configStore.js';
 import { PROVIDERS, MAX_RECORDING_MS } from '../utils/constants.js';
 import { logger } from '../utils/logger.js';
+import { ensureServicesRunning } from './start.js';
 
 function getTmpRecordingPath(): string {
   return path.join(os.tmpdir(), `live-translate-rec-${Date.now()}.wav`);
@@ -48,9 +49,12 @@ function printResultBox(
 export async function runTranslate(): Promise<void> {
   const status = await checkHealth();
   if (!status.healthy) {
-    logger.error('Services are not running. Run `live-translate start` first.');
-    process.exitCode = 1;
-    return;
+    const started = await ensureServicesRunning();
+    if (!started) {
+      process.exitCode = 1;
+      return;
+    }
+    console.log('');
   }
 
   if (!process.stdin.isTTY) {
