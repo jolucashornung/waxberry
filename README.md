@@ -72,31 +72,27 @@ On first run, `live-translate` automatically:
 
 Logs are written to `~/.live-translate/logs/`.
 
-## Use as MCP Server
+## Use with Claude Desktop
 
-Claude Desktop and other MCP clients can call live-translate as a tool. Add this to your `claude_desktop_config.json`:
+If you use Claude Desktop, install **[live-translate-mcp](https://github.com/waxberry-dev/live-translate-mcp)** instead — a standalone MCP server that gives Claude the ability to translate audio files with no local services to manage. It uses Whisper and Piper locally, and Claude itself for translation.
+
+```bash
+npm install -g live-translate-mcp
+```
 
 ```json
 {
   "mcpServers": {
     "live-translate": {
       "command": "npx",
-      "args": ["-y", "-p", "live-translate", "live-translate-mcp"]
+      "args": ["-y", "live-translate-mcp"],
+      "env": { "ANTHROPIC_API_KEY": "your-key-here" }
     }
   }
 }
 ```
 
-This starts the MCP server, which exposes two tools:
-
-| Tool | Description |
-|------|-------------|
-| `translate_speech` | Translate base64 WAV audio between English and Mandarin. Returns original text, translation, and synthesised audio. |
-| `health_check` | Check whether all live-translate backend services are running. |
-
-The MCP server proxies to the local orchestrator — you must run `live-translate start` before Claude Desktop can call the tools. The `health_check` tool will return a degraded status if services are not running.
-
-The `LIVE_TRANSLATE_URL` environment variable overrides the default orchestrator address (`http://localhost:8000`).
+See the [live-translate-mcp README](https://github.com/waxberry-dev/live-translate-mcp) for full setup instructions.
 
 ## Prerequisites
 
