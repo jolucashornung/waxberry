@@ -105,7 +105,17 @@ export async function runTranslate(): Promise<void> {
     }
 
     clearLine();
-    process.stdout.write(chalk.blue('  ⟳ Translating...\n'));
+    const processingStart = Date.now();
+    const processingTimer = setInterval(() => {
+      const elapsed = ((Date.now() - processingStart) / 1000).toFixed(1);
+      clearLine();
+      process.stdout.write(chalk.blue(`  ⟳ Processing... ${elapsed}s`));
+    }, 100);
+
+    const stopProcessingTimer = (): void => {
+      clearInterval(processingTimer);
+      clearLine();
+    };
 
     try {
       const audioBytes = fs.readFileSync(filePath);
@@ -113,6 +123,7 @@ export async function runTranslate(): Promise<void> {
 
       const result = await translate(audioBytes.toString('base64'));
 
+      stopProcessingTimer();
       if (isTranslateError(result)) {
         logger.error(`Unsupported language: ${result.detected_language}`);
       } else {
@@ -122,6 +133,7 @@ export async function runTranslate(): Promise<void> {
         await playAudio(result.audio_base64);
       }
     } catch (err) {
+      stopProcessingTimer();
       logger.error(`Translation failed: ${(err as Error).message}`);
     }
 
