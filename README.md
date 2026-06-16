@@ -1,7 +1,15 @@
+<p align="center">
+  <img src="logo/yangmei-icon.png" alt="live-translate" width="120" />
+</p>
+
 # live-translate — English ↔ 中文
 
 Fully local speech-to-speech translator between English and Mandarin Chinese.
 No cloud APIs required. All audio processing runs on your machine. MIT licensed.
+
+<p align="center">
+  <img src="assets/demo.gif" alt="live-translate demo" width="600" />
+</p>
 
 ## Install
 
