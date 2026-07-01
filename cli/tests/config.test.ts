@@ -29,7 +29,7 @@ afterEach(() => {
 describe('getConfigPath', () => {
   it('returns path inside home directory', () => {
     const configPath = getConfigPath();
-    expect(configPath).toBe(path.join(testHome, '.waxberry', 'config.json'));
+    expect(configPath).toBe(path.join(testHome, '.live-translate', 'config.json'));
   });
 });
 
@@ -55,11 +55,19 @@ describe('saveConfig and loadConfig', () => {
   });
 
   it('reads back the saved config correctly', () => {
-    const config = { provider: 'openai' as const, model: 'gpt-4o-mini', apiKey: 'sk-openai-test', ollamaUrl: 'http://localhost:11434' };
+    const config = { provider: 'openai' as const, model: 'gpt-4o-mini', apiKey: 'sk-openai-test', ollamaUrl: 'http://localhost:11434', whisperModel: 'onnx-community/whisper-large-v3' };
     saveConfig(config);
 
     const loaded = loadConfig();
     expect(loaded).toEqual(config);
+  });
+
+  it('returns default whisperModel when config on disk has no whisperModel field', () => {
+    fs.mkdirSync(path.join(testHome, '.live-translate'), { recursive: true });
+    fs.writeFileSync(getConfigPath(), JSON.stringify({ provider: 'opus-mt', model: '', apiKey: '', ollamaUrl: '' }));
+
+    const loaded = loadConfig();
+    expect(loaded.whisperModel).toBe('onnx-community/whisper-base');
   });
 
   it('returns default config when no file exists', () => {
@@ -124,5 +132,22 @@ describe('non-interactive config via runConfig', () => {
     await runConfig({ provider: 'unknown-provider' });
     expect(process.exitCode).toBe(1);
     process.exitCode = 0;
+  });
+
+  it('saves whisperModel when --whisper-model flag is provided', async () => {
+    const { runConfig } = await import('../src/commands/config.js');
+    await runConfig({ provider: 'opus-mt', whisperModel: 'onnx-community/whisper-large-v3' });
+
+    const loaded = loadConfig();
+    expect(loaded.whisperModel).toBe('onnx-community/whisper-large-v3');
+  });
+
+  it('preserves existing whisperModel when --whisper-model flag is not passed', async () => {
+    saveConfig({ ...DEFAULT_CONFIG, whisperModel: 'onnx-community/whisper-medium' });
+    const { runConfig } = await import('../src/commands/config.js');
+    await runConfig({ provider: 'opus-mt' });
+
+    const loaded = loadConfig();
+    expect(loaded.whisperModel).toBe('onnx-community/whisper-medium');
   });
 });

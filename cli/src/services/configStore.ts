@@ -17,7 +17,7 @@ export function loadConfig(): Config {
     return { ...DEFAULT_CONFIG };
   }
   const raw = fs.readFileSync(configPath, 'utf8');
-  return JSON.parse(raw) as Config;
+  return { ...DEFAULT_CONFIG, ...(JSON.parse(raw) as Partial<Config>) };
 }
 
 export function saveConfig(config: Config): void {

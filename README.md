@@ -120,6 +120,23 @@ Run `live-translate doctor` to verify your setup. `sox` and `espeak-ng` are down
 
 Services run as local processes managed by the CLI. State and config live in `~/.live-translate/`.
 
+### Whisper model size
+
+The ASR service uses `whisper-base` by default (fast, 74 MB). For significantly better Mandarin accuracy, switch to a larger model:
+
+```bash
+live-translate config --whisper-model onnx-community/whisper-large-v3
+```
+
+| Model | Size | Mandarin accuracy | Latency |
+|-------|------|-------------------|---------|
+| `whisper-base` | 74 MB | Good | ~1–2 s |
+| `whisper-small` | 244 MB | Better | ~2–4 s |
+| `whisper-medium` | 769 MB | High | ~4–8 s |
+| `whisper-large-v3` | 1.5 GB | Best | ~8–15 s (CPU) |
+
+`whisper-large-v3` requires ~6 GB RAM and downloads ~3 GB on first run. Run `live-translate stop && live-translate start` after changing the model.
+
 ## Development
 
 ```bash
@@ -152,9 +169,16 @@ live-translate/
 │   │   └── utils/           # constants, logger, binaries
 │   └── package.json
 ├── tests/
-│   └── integration/         # end-to-end tests (requires running services)
+│   ├── integration/         # end-to-end tests (requires running services)
+│   └── asr-benchmark/       # accuracy benchmark: CER/WER across model sizes
 └── docs/
     └── records/             # design decisions and feature specs
+```
+
+**Troubleshooting: Mandarin transcription is inaccurate?** Switch to a larger Whisper model:
+```bash
+live-translate config --whisper-model onnx-community/whisper-large-v3
+live-translate stop && live-translate start
 ```
 
 ## Hardware

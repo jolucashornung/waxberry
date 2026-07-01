@@ -62,7 +62,7 @@ describe('stopServices', () => {
   });
 
   it('removes PID file even when the process is already gone', async () => {
-    const pidsDir = path.join(testHome, '.waxberry', 'pids');
+    const pidsDir = path.join(testHome, '.live-translate', 'pids');
     fs.mkdirSync(pidsDir, { recursive: true });
     // PID 999999999 will not exist on any real system
     fs.writeFileSync(path.join(pidsDir, 'asr.pid'), '999999999');
@@ -73,7 +73,7 @@ describe('stopServices', () => {
   });
 
   it('removes all PID files for all services', async () => {
-    const pidsDir = path.join(testHome, '.waxberry', 'pids');
+    const pidsDir = path.join(testHome, '.live-translate', 'pids');
     fs.mkdirSync(pidsDir, { recursive: true });
     for (const svc of ['asr', 'translation', 'tts', 'orchestrator']) {
       fs.writeFileSync(path.join(pidsDir, `${svc}.pid`), '999999999');

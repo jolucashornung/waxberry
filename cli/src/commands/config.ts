@@ -1,6 +1,6 @@
-import { select, input, password, confirm } from '@inquirer/prompts';
+import { select, input, password } from '@inquirer/prompts';
 import chalk from 'chalk';
-import { PROVIDERS, type ProviderKey, type Config } from '../utils/constants.js';
+import { PROVIDERS, WHISPER_MODELS, DEFAULT_CONFIG, type ProviderKey, type Config } from '../utils/constants.js';
 import { saveConfig, loadConfig, maskApiKey, isValidProvider } from '../services/configStore.js';
 import { logger } from '../utils/logger.js';
 
@@ -8,6 +8,7 @@ interface ConfigOptions {
   provider?: string;
   model?: string;
   apiKey?: string;
+  whisperModel?: string;
 }
 
 async function runInteractiveConfig(): Promise<Config> {
@@ -49,7 +50,16 @@ async function runInteractiveConfig(): Promise<Config> {
     });
   }
 
-  return { provider, model, apiKey, ollamaUrl };
+  const whisperModel = await select<string>({
+    message: 'Choose a Whisper model for speech recognition:',
+    choices: Object.entries(WHISPER_MODELS).map(([key, def]) => ({
+      name: `${def.name} — ${def.description}`,
+      value: key,
+    })),
+    default: existing.whisperModel ?? DEFAULT_CONFIG.whisperModel,
+  });
+
+  return { provider, model, apiKey, ollamaUrl, whisperModel };
 }
 
 function printSummary(config: Config): void {
@@ -59,6 +69,7 @@ function printSummary(config: Config): void {
   if (config.model) console.log(`    Model:     ${config.model}`);
   if (config.apiKey) console.log(`    API Key:   ${maskApiKey(config.apiKey)}`);
   if (config.provider === 'ollama') console.log(`    Ollama:    ${config.ollamaUrl}`);
+  console.log(`    ASR model: ${config.whisperModel}`);
   console.log('');
   console.log('  Run `live-translate start` to start translating.');
   console.log('');
@@ -77,11 +88,13 @@ export async function runConfig(opts: ConfigOptions): Promise<void> {
     }
 
     const providerDef = PROVIDERS[opts.provider];
+    const existing = loadConfig();
     config = {
       provider: opts.provider,
       model: opts.model ?? providerDef.defaultModel,
       apiKey: opts.apiKey ?? '',
       ollamaUrl: 'http://localhost:11434',
+      whisperModel: opts.whisperModel ?? existing.whisperModel ?? DEFAULT_CONFIG.whisperModel,
     };
   } else {
     config = await runInteractiveConfig();

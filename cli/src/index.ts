@@ -26,8 +26,9 @@ program
   .option('--provider <provider>', 'Translation provider (opus-mt, ollama, anthropic, openai, deepseek)')
   .option('--model <model>', 'Model name')
   .option('--api-key <key>', 'API key')
-  .action((opts: { provider?: string; model?: string; apiKey?: string }) =>
-    runConfig({ provider: opts.provider, model: opts.model, apiKey: opts.apiKey })
+  .option('--whisper-model <model>', 'Whisper model for ASR (whisper-base, whisper-small, whisper-medium, whisper-large-v3)')
+  .action((opts: { provider?: string; model?: string; apiKey?: string; whisperModel?: string }) =>
+    runConfig({ provider: opts.provider, model: opts.model, apiKey: opts.apiKey, whisperModel: opts.whisperModel })
   );
 
 program

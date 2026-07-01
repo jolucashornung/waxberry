@@ -7,7 +7,7 @@ import type { Routes } from './shared.js';
 
 env.cacheDir = path.join(os.homedir(), '.live-translate', 'models');
 
-const MODEL = 'onnx-community/whisper-base';
+const MODEL = process.env['WHISPER_MODEL'] ?? 'onnx-community/whisper-base';
 const PORT = parseInt(process.env['PORT'] ?? '8001', 10);
 
 const transcriber = await pipeline('automatic-speech-recognition', MODEL, { dtype: 'q8' });

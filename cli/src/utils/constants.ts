@@ -1,3 +1,12 @@
+export const WHISPER_MODELS = {
+  'onnx-community/whisper-base':     { name: 'whisper-base',     description: 'Fast, 74M params. Default.' },
+  'onnx-community/whisper-small':    { name: 'whisper-small',    description: 'Better Mandarin, 244M params.' },
+  'onnx-community/whisper-medium':   { name: 'whisper-medium',   description: 'High accuracy, 769M params.' },
+  'onnx-community/whisper-large-v3': { name: 'whisper-large-v3', description: 'Best Mandarin, 1.5B params. Needs 6+ GB RAM.' },
+} as const;
+
+export type WhisperModelKey = keyof typeof WHISPER_MODELS;
+
 export const PROVIDERS = {
   'opus-mt': {
     name: 'Opus-MT',
@@ -53,6 +62,7 @@ export interface Config {
   model: string;
   apiKey: string;
   ollamaUrl: string;
+  whisperModel?: string;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -60,6 +70,7 @@ export const DEFAULT_CONFIG: Config = {
   model: '',
   apiKey: '',
   ollamaUrl: 'http://localhost:11434',
+  whisperModel: 'onnx-community/whisper-base',
 };
 
 export const SERVICE_PORTS = {

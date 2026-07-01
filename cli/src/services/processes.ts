@@ -116,6 +116,12 @@ function buildTranslationEnv(config: Config): NodeJS.ProcessEnv {
   };
 }
 
+function buildAsrEnv(config: Config): NodeJS.ProcessEnv {
+  return {
+    ...(config.whisperModel ? { WHISPER_MODEL: config.whisperModel } : {}),
+  };
+}
+
 export async function startServices(
   config: Config,
   onProgress?: (msg: string) => void
@@ -147,6 +153,7 @@ export async function startServices(
       PORT: String(svc.port),
       PIPER_VOICE_DIR: getVoicesDir(),
       ...(svc.name === 'translation' ? buildTranslationEnv(config) : {}),
+      ...(svc.name === 'asr'         ? buildAsrEnv(config)         : {}),
       ...(svc.extraEnv ?? {}),
     };
 
