@@ -99,8 +99,11 @@ export async function runStart(): Promise<void> {
   const config = loadConfig();
   const providerDef = PROVIDERS[config.provider];
 
+  const whisperModel = config.whisperModel ?? 'onnx-community/whisper-base';
+  const whisperLabel = whisperModel.split('/').pop() ?? whisperModel;
+
   console.log('');
-  console.log('    ASR:         Whisper (base) — local');
+  console.log(`    ASR:         Whisper (${whisperLabel}) — local`);
   console.log(`    Translation: ${providerDef.name}${config.model ? ` (${config.model})` : ''}`);
   console.log('    TTS:         Piper (en, zh) — local');
   console.log('');

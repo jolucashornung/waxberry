@@ -7,8 +7,9 @@ import { checkHealth, translate, isTranslateError } from '../services/api.js';
 import { startRecording, stopRecording, isRecordingTooShort } from '../services/recorder.js';
 import { playAudio } from '../services/player.js';
 import { loadConfig, configExists } from '../services/configStore.js';
-import { PROVIDERS, MAX_RECORDING_MS } from '../utils/constants.js';
+import { PROVIDERS, MAX_RECORDING_MS, DEFAULT_CONFIG } from '../utils/constants.js';
 import { logger } from '../utils/logger.js';
+import { wrapToWidth, padToWidth } from '../utils/textWidth.js';
 import { ensureServicesRunning } from './start.js';
 
 function getTmpRecordingPath(): string {
@@ -27,6 +28,16 @@ function printBanner(providerLabel: string): void {
   console.log('');
 }
 
+const BOX_INNER_WIDTH = 44;
+
+// Emits a box row for text that may exceed the box width or contain double-width CJK glyphs,
+// wrapping onto as many lines as needed and padding each to the exact inner width.
+function printBoxText(text: string): void {
+  for (const line of wrapToWidth(text, BOX_INNER_WIDTH)) {
+    console.log(`  │  ${padToWidth(line, BOX_INNER_WIDTH)}│`);
+  }
+}
+
 function printResultBox(
   original: string,
   detectedLang: string,
@@ -35,15 +46,15 @@ function printResultBox(
 ): void {
   const sourceLine = detectedLang === 'en' ? 'You said (English):' : 'You said (中文):';
   const targetLine = targetLang === 'zh' ? 'Translation (中文):' : 'Translation (English):';
-  const pad = (s: string) => s.slice(0, 44).padEnd(44);
+  const border = '─'.repeat(BOX_INNER_WIDTH + 2);
 
-  console.log('  ┌──────────────────────────────────────────────┐');
-  console.log(`  │  ${pad(sourceLine)}│`);
-  console.log(`  │  ${pad(original)}│`);
-  console.log('  │                                              │');
-  console.log(`  │  ${pad(targetLine)}│`);
-  console.log(`  │  ${pad(translated)}│`);
-  console.log('  └──────────────────────────────────────────────┘');
+  console.log(`  ┌${border}┐`);
+  printBoxText(sourceLine);
+  printBoxText(original);
+  console.log(`  │  ${padToWidth('', BOX_INNER_WIDTH)}│`);
+  printBoxText(targetLine);
+  printBoxText(translated);
+  console.log(`  └${border}┘`);
 }
 
 export async function runTranslate(): Promise<void> {
@@ -63,7 +74,7 @@ export async function runTranslate(): Promise<void> {
     return;
   }
 
-  const config = configExists() ? loadConfig() : { provider: 'opus-mt' as const, model: '', apiKey: '', ollamaUrl: '' };
+  const config = configExists() ? loadConfig() : { ...DEFAULT_CONFIG };
   const providerDef = PROVIDERS[config.provider];
   const providerLabel = config.model ? `${providerDef.name} (${config.model})` : providerDef.name;
 

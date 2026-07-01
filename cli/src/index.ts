@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import { runDoctor } from './commands/doctor.js';
 import { runConfig } from './commands/config.js';
@@ -7,17 +8,20 @@ import { runStop } from './commands/stop.js';
 import { runStatus } from './commands/status.js';
 import { runTranslate } from './commands/translate.js';
 
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json') as { version: string };
+
 const program = new Command();
 
 program
   .name('live-translate')
   .description('Real-time English ↔ Mandarin speech translator')
-  .version('0.1.0')
+  .version(version)
   .action(runTranslate);
 
 program
   .command('doctor')
-  .description('Check prerequisites (Docker, Sox, microphone, config)')
+  .description('Check prerequisites (Node, Sox, espeak-ng, microphone, config)')
   .action(runDoctor);
 
 program
@@ -33,12 +37,12 @@ program
 
 program
   .command('start')
-  .description('Start Docker backend services')
+  .description('Start backend services')
   .action(runStart);
 
 program
   .command('stop')
-  .description('Stop Docker backend services')
+  .description('Stop backend services')
   .action(runStop);
 
 program

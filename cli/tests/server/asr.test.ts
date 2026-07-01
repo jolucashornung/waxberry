@@ -147,6 +147,34 @@ describe('POST /transcribe — native language probe', () => {
     );
   });
 
+  it('re-transcribes in the corrected language when the transcript disagrees with the probe', async () => {
+    // Probe says English, but the forced-English transcription leaks Chinese characters.
+    mockModelGenerate.mockResolvedValue(langProbe(LANG_EN));
+    mockTranscriber
+      .mockResolvedValueOnce([{ text: '你好世界你好' }])  // first pass (english) — leaks Chinese
+      .mockResolvedValueOnce([{ text: '你好世界，你好。' }]); // second pass (chinese) — corrected
+
+    const result = await transcribeHandler({ audio_base64: 'dGVzdA==' }) as Record<string, unknown>;
+
+    expect(result.language).toBe('zh');
+    expect(result.text).toBe('你好世界，你好。');
+    // One probe, two transcription passes
+    expect(mockTranscriber).toHaveBeenCalledTimes(2);
+    expect(mockTranscriber).toHaveBeenNthCalledWith(1, expect.any(Float32Array), { language: 'english', task: 'transcribe' });
+    expect(mockTranscriber).toHaveBeenNthCalledWith(2, expect.any(Float32Array), { language: 'chinese', task: 'transcribe' });
+  });
+
+  it('does not re-transcribe when transcript is too short to cross-check', async () => {
+    // Probe says English, transcript is short Chinese (< 4 chars) — cross-check skipped.
+    mockModelGenerate.mockResolvedValue(langProbe(LANG_EN));
+    mockTranscriber.mockResolvedValue([{ text: '你' }]);
+
+    const result = await transcribeHandler({ audio_base64: 'dGVzdA==' }) as Record<string, unknown>;
+
+    expect(result.language).toBe('en');
+    expect(mockTranscriber).toHaveBeenCalledTimes(1);
+  });
+
   it('throws when audio_base64 is missing', async () => {
     await expect(transcribeHandler({})).rejects.toThrow('audio_base64 is required');
   });

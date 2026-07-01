@@ -53,6 +53,18 @@ export function detectLanguage(text: string): 'en' | 'zh' {
   return total > 0 && chinese / total > 0.3 ? 'zh' : 'en';
 }
 
+// Below this transcript length the char-ratio heuristic is unreliable, so skip the cross-check.
+const MIN_CROSS_CHECK_CHARS = 4;
+
+async function transcribeAs(samples: Float32Array, language: 'en' | 'zh'): Promise<string> {
+  const result = await transcriber(samples, {
+    language: language === 'zh' ? 'chinese' : 'english',
+    task: 'transcribe',
+  });
+  const output = Array.isArray(result) ? result[0] : result;
+  return (output as { text: string }).text?.trim() ?? '';
+}
+
 export const routes: Routes = {
   'GET /health': async () => ({
     status: 'ok',
@@ -68,14 +80,19 @@ export const routes: Routes = {
 
     const { samples } = wavBase64ToFloat32(req.audio_base64);
 
-    const language = await detectAudioLanguage(samples);
+    let language = await detectAudioLanguage(samples);
+    let text = await transcribeAs(samples, language);
 
-    const result = await transcriber(samples, {
-      language: language === 'zh' ? 'chinese' : 'english',
-      task: 'transcribe',
-    });
-    const output = Array.isArray(result) ? result[0] : result;
-    const text = (output as { text: string }).text?.trim() ?? '';
+    // Cross-check the acoustic probe against the transcript. When forced transcription leaks the
+    // true language into the text (e.g. probe said zh but the output is Latin), the char-ratio
+    // heuristic disagrees — re-transcribe once in the corrected language. Skips trivial output.
+    if (text.length >= MIN_CROSS_CHECK_CHARS) {
+      const textLanguage = detectLanguage(text);
+      if (textLanguage !== language) {
+        language = textLanguage;
+        text = await transcribeAs(samples, language);
+      }
+    }
 
     return { text, language, confidence: 0.95 };
   },
