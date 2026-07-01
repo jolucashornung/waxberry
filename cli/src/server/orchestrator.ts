@@ -28,15 +28,21 @@ async function callAsr(audioBase64: string, sampleRate: number): Promise<{ text:
   return response.json() as Promise<{ text: string; language: string }>;
 }
 
+interface ContextTurn {
+  source_text: string;
+  target_text: string;
+}
+
 async function callTranslation(
   text: string,
   sourceLang: string,
   targetLang: string,
+  context: ContextTurn[],
 ): Promise<{ translated_text: string }> {
   const response = await fetchWithTimeout(`${TRANSLATION_URL}/translate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, source_lang: sourceLang, target_lang: targetLang }),
+    body: JSON.stringify({ text, source_lang: sourceLang, target_lang: targetLang, context }),
   });
   if (!response.ok) {
     throw new Error(`Translation service error: HTTP ${response.status}`);
@@ -89,12 +95,13 @@ export const routes: Routes = {
   },
 
   'POST /translate': async (body) => {
-    const req = body as { audio_base64: string; sample_rate?: number };
+    const req = body as { audio_base64: string; sample_rate?: number; context?: ContextTurn[] };
     if (!req.audio_base64) {
       throw new Error('Invalid request: audio_base64 is required');
     }
 
     const sampleRate = req.sample_rate ?? 16000;
+    const context = Array.isArray(req.context) ? req.context : [];
     const asrResult = await callAsr(req.audio_base64, sampleRate);
     const { text: originalText, language: detectedLanguage } = asrResult;
 
@@ -116,7 +123,7 @@ export const routes: Routes = {
 
     const targetLanguage = detectedLanguage === 'en' ? 'zh' : 'en';
 
-    const translationResult = await callTranslation(originalText, detectedLanguage, targetLanguage);
+    const translationResult = await callTranslation(originalText, detectedLanguage, targetLanguage, context);
     const { translated_text: translatedText } = translationResult;
 
     const ttsResult = await callTts(translatedText, targetLanguage);

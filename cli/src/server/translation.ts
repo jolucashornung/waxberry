@@ -16,11 +16,34 @@ const PORT = parseInt(process.env['PORT'] ?? '8002', 10);
 
 const SUPPORTED_PAIRS = new Set(['en-zh', 'zh-en']);
 
+interface ContextTurn {
+  source_text: string;
+  target_text: string;
+}
+
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
 function buildSystemPrompt(sourceLang: string, targetLang: string): string {
   const names: Record<string, string> = { en: 'English', zh: 'Mandarin Chinese' };
   const source = names[sourceLang] ?? sourceLang;
   const target = names[targetLang] ?? targetLang;
-  return `You are a translator. Translate the following text from ${source} to ${target}. Return only the translation, no explanation.`;
+  return `You are translating a live conversation between English and Mandarin Chinese speakers. `
+    + `Translate the latest message from ${source} to ${target}. Any earlier turns are provided only `
+    + `for context (names, topic, tone). Return only the translation of the latest message, no explanation.`;
+}
+
+// Turns prior exchanges into alternating user/assistant messages, then appends the current text.
+function buildChatMessages(text: string, context: ContextTurn[]): ChatMessage[] {
+  const messages: ChatMessage[] = [];
+  for (const turn of context) {
+    messages.push({ role: 'user', content: turn.source_text });
+    messages.push({ role: 'assistant', content: turn.target_text });
+  }
+  messages.push({ role: 'user', content: text });
+  return messages;
 }
 
 type TranslationFn = (text: string) => Promise<Array<{ translation_text: string }>>;
@@ -50,7 +73,7 @@ async function translateWithOpusMt(text: string, sourceLang: string, targetLang:
   return (output as { translation_text: string }).translation_text ?? '';
 }
 
-async function translateWithOllama(text: string, sourceLang: string, targetLang: string): Promise<string> {
+async function translateWithOllama(text: string, sourceLang: string, targetLang: string, context: ContextTurn[]): Promise<string> {
   const model = TRANSLATION_MODEL || 'qwen2.5:7b';
   const response = await fetch(`${OLLAMA_URL}/api/chat`, {
     method: 'POST',
@@ -60,7 +83,7 @@ async function translateWithOllama(text: string, sourceLang: string, targetLang:
       stream: false,
       messages: [
         { role: 'system', content: buildSystemPrompt(sourceLang, targetLang) },
-        { role: 'user', content: text },
+        ...buildChatMessages(text, context),
       ],
     }),
   });
@@ -71,7 +94,7 @@ async function translateWithOllama(text: string, sourceLang: string, targetLang:
   return data.message.content.trim();
 }
 
-async function translateWithAnthropic(text: string, sourceLang: string, targetLang: string): Promise<string> {
+async function translateWithAnthropic(text: string, sourceLang: string, targetLang: string, context: ContextTurn[]): Promise<string> {
   const model = TRANSLATION_MODEL || 'claude-haiku-4-5-20241022';
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -84,7 +107,7 @@ async function translateWithAnthropic(text: string, sourceLang: string, targetLa
       model,
       max_tokens: 1024,
       system: buildSystemPrompt(sourceLang, targetLang),
-      messages: [{ role: 'user', content: text }],
+      messages: buildChatMessages(text, context),
     }),
   });
   if (!response.ok) {
@@ -99,6 +122,7 @@ async function translateWithOpenAICompat(
   text: string,
   sourceLang: string,
   targetLang: string,
+  context: ContextTurn[],
   baseUrl: string,
 ): Promise<string> {
   const model = TRANSLATION_MODEL || (PROVIDER === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini');
@@ -112,7 +136,7 @@ async function translateWithOpenAICompat(
       model,
       messages: [
         { role: 'system', content: buildSystemPrompt(sourceLang, targetLang) },
-        { role: 'user', content: text },
+        ...buildChatMessages(text, context),
       ],
     }),
   });
@@ -123,18 +147,19 @@ async function translateWithOpenAICompat(
   return data.choices[0]?.message.content.trim() ?? '';
 }
 
-async function translate(text: string, sourceLang: string, targetLang: string): Promise<string> {
+async function translate(text: string, sourceLang: string, targetLang: string, context: ContextTurn[]): Promise<string> {
   switch (PROVIDER) {
     case 'opus-mt':
+      // Opus-MT is a seq2seq model with no conversational input — context is ignored.
       return translateWithOpusMt(text, sourceLang, targetLang);
     case 'ollama':
-      return translateWithOllama(text, sourceLang, targetLang);
+      return translateWithOllama(text, sourceLang, targetLang, context);
     case 'anthropic':
-      return translateWithAnthropic(text, sourceLang, targetLang);
+      return translateWithAnthropic(text, sourceLang, targetLang, context);
     case 'openai':
-      return translateWithOpenAICompat(text, sourceLang, targetLang, 'https://api.openai.com/v1');
+      return translateWithOpenAICompat(text, sourceLang, targetLang, context, 'https://api.openai.com/v1');
     case 'deepseek':
-      return translateWithOpenAICompat(text, sourceLang, targetLang, 'https://api.deepseek.com/v1');
+      return translateWithOpenAICompat(text, sourceLang, targetLang, context, 'https://api.deepseek.com/v1');
     default:
       throw new Error(`Unsupported provider: ${PROVIDER}`);
   }
@@ -148,7 +173,7 @@ export const routes: Routes = {
   }),
 
   'POST /translate': async (body) => {
-    const req = body as { text: string; source_lang: string; target_lang: string };
+    const req = body as { text: string; source_lang: string; target_lang: string; context?: ContextTurn[] };
     if (!req.text || !req.source_lang || !req.target_lang) {
       throw new Error('Invalid request: text, source_lang, and target_lang are required');
     }
@@ -158,7 +183,8 @@ export const routes: Routes = {
       throw new Error(`Unsupported language pair: ${req.source_lang} → ${req.target_lang}. Supported: en↔zh`);
     }
 
-    const translatedText = await translate(req.text, req.source_lang, req.target_lang);
+    const context = Array.isArray(req.context) ? req.context : [];
+    const translatedText = await translate(req.text, req.source_lang, req.target_lang, context);
     return {
       translated_text: translatedText,
       source_lang: req.source_lang,

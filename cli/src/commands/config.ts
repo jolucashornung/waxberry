@@ -10,6 +10,7 @@ interface ConfigOptions {
   apiKey?: string;
   whisperModel?: string;
   recordingMode?: string;
+  contextTurns?: string;
 }
 
 function isValidRecordingMode(value: string): value is RecordingMode {
@@ -73,7 +74,21 @@ async function runInteractiveConfig(): Promise<Config> {
     default: existing.recordingMode ?? DEFAULT_CONFIG.recordingMode,
   });
 
-  return { provider, model, apiKey, ollamaUrl, whisperModel, recordingMode };
+  // Conversation context only benefits LLM providers; Opus-MT is seq2seq and ignores it.
+  let contextTurns = existing.contextTurns ?? DEFAULT_CONFIG.contextTurns;
+  if (provider !== 'opus-mt') {
+    contextTurns = await select<number>({
+      message: 'How many prior turns to send as conversation context?',
+      choices: [
+        { name: '0 — none (translate each utterance in isolation)', value: 0 },
+        { name: '3 — recommended', value: 3 },
+        { name: '5 — more context, higher token cost', value: 5 },
+      ],
+      default: existing.contextTurns ?? DEFAULT_CONFIG.contextTurns,
+    });
+  }
+
+  return { provider, model, apiKey, ollamaUrl, whisperModel, recordingMode, contextTurns };
 }
 
 function printSummary(config: Config): void {
@@ -85,6 +100,7 @@ function printSummary(config: Config): void {
   if (config.provider === 'ollama') console.log(`    Ollama:    ${config.ollamaUrl}`);
   console.log(`    ASR model: ${config.whisperModel}`);
   console.log(`    Recording: ${config.recordingMode}`);
+  if (config.provider !== 'opus-mt') console.log(`    Context:   ${config.contextTurns} turns`);
   console.log('');
   console.log('  Run `live-translate start` to start translating.');
   console.log('');
@@ -111,6 +127,17 @@ export async function runConfig(opts: ConfigOptions): Promise<void> {
       return;
     }
 
+    let contextTurns = existing.contextTurns ?? DEFAULT_CONFIG.contextTurns;
+    if (opts.contextTurns !== undefined) {
+      const parsed = Number(opts.contextTurns);
+      if (!Number.isInteger(parsed) || parsed < 0) {
+        logger.error(`Invalid context turns: ${opts.contextTurns}. Expected a non-negative integer.`);
+        process.exitCode = 1;
+        return;
+      }
+      contextTurns = parsed;
+    }
+
     config = {
       provider: opts.provider,
       model: opts.model ?? providerDef.defaultModel,
@@ -118,6 +145,7 @@ export async function runConfig(opts: ConfigOptions): Promise<void> {
       ollamaUrl: 'http://localhost:11434',
       whisperModel: opts.whisperModel ?? existing.whisperModel ?? DEFAULT_CONFIG.whisperModel,
       recordingMode: (opts.recordingMode as RecordingMode | undefined) ?? existing.recordingMode ?? DEFAULT_CONFIG.recordingMode,
+      contextTurns,
     };
   } else {
     config = await runInteractiveConfig();

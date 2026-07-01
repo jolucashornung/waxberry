@@ -1,4 +1,4 @@
-import { ORCHESTRATOR_URL, SERVICE_PORTS } from '../utils/constants.js';
+import { ORCHESTRATOR_URL, SERVICE_PORTS, type ContextTurn } from '../utils/constants.js';
 
 export interface TranslateSuccess {
   original_text: string;
@@ -59,11 +59,11 @@ export async function checkHealth(): Promise<HealthStatus> {
   };
 }
 
-export async function translate(audioBase64: string): Promise<TranslateResponse> {
+export async function translate(audioBase64: string, context: ContextTurn[] = []): Promise<TranslateResponse> {
   const res = await fetch(`${ORCHESTRATOR_URL}/translate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ audio_base64: audioBase64, sample_rate: 16000 }),
+    body: JSON.stringify({ audio_base64: audioBase64, sample_rate: 16000, context }),
     signal: AbortSignal.timeout(30000),
   });
 

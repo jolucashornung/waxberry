@@ -77,6 +77,25 @@ describe('orchestrator POST /translate', () => {
     expect(result['mime_type']).toBe('audio/wav');
   });
 
+  it('forwards conversation context to the translation service', async () => {
+    mockFetch
+      .mockResolvedValueOnce(makeJsonResponse({ text: 'Hello', language: 'en', confidence: 0.95 }))
+      .mockResolvedValueOnce(makeJsonResponse({ translated_text: '你好', source_lang: 'en', target_lang: 'zh' }))
+      .mockResolvedValueOnce(makeJsonResponse({ audio_base64: 'ZmFrZQ==', mime_type: 'audio/wav' }));
+
+    const context = [{ source_text: 'My name is Lucas', target_text: '我叫卢卡斯' }];
+    await routes['POST /translate']!({
+      audio_base64: makeFakeAudioBase64(),
+      sample_rate: 16000,
+      context,
+    });
+
+    // Second fetch call is the translation service; its body must carry the context.
+    const translationCall = mockFetch.mock.calls[1];
+    const body = JSON.parse((translationCall?.[1] as RequestInit).body as string) as Record<string, unknown>;
+    expect(body['context']).toEqual(context);
+  });
+
   it('returns structured error for unsupported language without throwing', async () => {
     mockFetch.mockResolvedValueOnce(makeJsonResponse({
       text: 'Bonjour',

@@ -67,6 +67,7 @@ export interface Config {
   ollamaUrl: string;
   whisperModel?: string;
   recordingMode?: RecordingMode;
+  contextTurns?: number;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -76,7 +77,14 @@ export const DEFAULT_CONFIG: Config = {
   ollamaUrl: 'http://localhost:11434',
   whisperModel: 'onnx-community/whisper-base',
   recordingMode: 'auto',
+  contextTurns: 3,
 };
+
+// A prior exchange fed to LLM translators for conversational continuity.
+export interface ContextTurn {
+  source_text: string;
+  target_text: string;
+}
 
 export const SERVICE_PORTS = {
   orchestrator: 8000,

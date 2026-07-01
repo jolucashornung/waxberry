@@ -32,8 +32,9 @@ program
   .option('--api-key <key>', 'API key')
   .option('--whisper-model <model>', 'Whisper model for ASR (whisper-base, whisper-small, whisper-medium, whisper-large-v3)')
   .option('--recording-mode <mode>', 'Recording mode (auto, push-to-talk)')
-  .action((opts: { provider?: string; model?: string; apiKey?: string; whisperModel?: string; recordingMode?: string }) =>
-    runConfig({ provider: opts.provider, model: opts.model, apiKey: opts.apiKey, whisperModel: opts.whisperModel, recordingMode: opts.recordingMode })
+  .option('--context-turns <n>', 'Prior conversation turns sent to LLM translators (0 disables)')
+  .action((opts: { provider?: string; model?: string; apiKey?: string; whisperModel?: string; recordingMode?: string; contextTurns?: string }) =>
+    runConfig({ provider: opts.provider, model: opts.model, apiKey: opts.apiKey, whisperModel: opts.whisperModel, recordingMode: opts.recordingMode, contextTurns: opts.contextTurns })
   );
 
 program

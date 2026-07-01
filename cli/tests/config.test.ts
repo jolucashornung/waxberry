@@ -55,7 +55,7 @@ describe('saveConfig and loadConfig', () => {
   });
 
   it('reads back the saved config correctly', () => {
-    const config = { provider: 'openai' as const, model: 'gpt-4o-mini', apiKey: 'sk-openai-test', ollamaUrl: 'http://localhost:11434', whisperModel: 'onnx-community/whisper-large-v3', recordingMode: 'push-to-talk' as const };
+    const config = { provider: 'openai' as const, model: 'gpt-4o-mini', apiKey: 'sk-openai-test', ollamaUrl: 'http://localhost:11434', whisperModel: 'onnx-community/whisper-large-v3', recordingMode: 'push-to-talk' as const, contextTurns: 5 };
     saveConfig(config);
 
     const loaded = loadConfig();

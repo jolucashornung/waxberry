@@ -7,7 +7,7 @@ import { checkHealth, translate, isTranslateError } from '../services/api.js';
 import { startRecording, stopRecording, isRecordingTooShort } from '../services/recorder.js';
 import { playAudio } from '../services/player.js';
 import { loadConfig, configExists } from '../services/configStore.js';
-import { PROVIDERS, MAX_RECORDING_MS, DEFAULT_CONFIG } from '../utils/constants.js';
+import { PROVIDERS, MAX_RECORDING_MS, DEFAULT_CONFIG, type ContextTurn } from '../utils/constants.js';
 import { logger } from '../utils/logger.js';
 import { wrapToWidth, padToWidth } from '../utils/textWidth.js';
 import { ensureServicesRunning } from './start.js';
@@ -81,6 +81,8 @@ export async function runTranslate(): Promise<void> {
   const providerDef = PROVIDERS[config.provider];
   const providerLabel = config.model ? `${providerDef.name} (${config.model})` : providerDef.name;
   const autoStop = (config.recordingMode ?? DEFAULT_CONFIG.recordingMode) === 'auto';
+  const contextTurns = config.contextTurns ?? DEFAULT_CONFIG.contextTurns ?? 0;
+  const history: ContextTurn[] = [];
 
   printBanner(providerLabel, autoStop);
   process.stdout.write(chalk.dim('  ▶ Ready\n'));
@@ -136,7 +138,8 @@ export async function runTranslate(): Promise<void> {
       const audioBytes = fs.readFileSync(filePath);
       fs.rmSync(filePath, { force: true });
 
-      const result = await translate(audioBytes.toString('base64'));
+      const context = contextTurns > 0 ? history.slice(-contextTurns) : [];
+      const result = await translate(audioBytes.toString('base64'), context);
 
       stopProcessingTimer();
       if (isTranslateError(result)) {
@@ -144,6 +147,9 @@ export async function runTranslate(): Promise<void> {
       } else {
         console.log('');
         printResultBox(result.original_text, result.detected_language, result.translated_text, result.target_language);
+        if (contextTurns > 0) {
+          history.push({ source_text: result.original_text, target_text: result.translated_text });
+        }
         console.log('  🔊 Playing translation...');
         await playAudio(result.audio_base64);
       }
