@@ -1,6 +1,7 @@
 import { select, input, password } from '@inquirer/prompts';
 import chalk from 'chalk';
 import { PROVIDERS, WHISPER_MODELS, RECORDING_MODES, DEFAULT_CONFIG, type ProviderKey, type RecordingMode, type Config } from '../utils/constants.js';
+import { isDevicePreference, type DevicePreference } from '../utils/device.js';
 import { saveConfig, loadConfig, maskApiKey, isValidProvider } from '../services/configStore.js';
 import { logger } from '../utils/logger.js';
 
@@ -11,6 +12,7 @@ interface ConfigOptions {
   whisperModel?: string;
   recordingMode?: string;
   contextTurns?: string;
+  device?: string;
 }
 
 function isValidRecordingMode(value: string): value is RecordingMode {
@@ -88,7 +90,17 @@ async function runInteractiveConfig(): Promise<Config> {
     });
   }
 
-  return { provider, model, apiKey, ollamaUrl, whisperModel, recordingMode, contextTurns };
+  const device = await select<DevicePreference>({
+    message: 'Compute device for speech recognition and synthesis:',
+    choices: [
+      { name: 'auto — use GPU if available, else CPU', value: 'auto' },
+      { name: 'cpu — always CPU', value: 'cpu' },
+      { name: 'gpu — require GPU (needs a CUDA/CoreML onnxruntime build)', value: 'gpu' },
+    ],
+    default: existing.device ?? DEFAULT_CONFIG.device,
+  });
+
+  return { provider, model, apiKey, ollamaUrl, whisperModel, recordingMode, contextTurns, device };
 }
 
 function printSummary(config: Config): void {
@@ -101,6 +113,7 @@ function printSummary(config: Config): void {
   console.log(`    ASR model: ${config.whisperModel}`);
   console.log(`    Recording: ${config.recordingMode}`);
   if (config.provider !== 'opus-mt') console.log(`    Context:   ${config.contextTurns} turns`);
+  console.log(`    Device:    ${config.device}`);
   console.log('');
   console.log('  Run `live-translate start` to start translating.');
   console.log('');
@@ -138,6 +151,12 @@ export async function runConfig(opts: ConfigOptions): Promise<void> {
       contextTurns = parsed;
     }
 
+    if (opts.device && !isDevicePreference(opts.device)) {
+      logger.error(`Unknown device: ${opts.device}. Valid: auto, cpu, gpu`);
+      process.exitCode = 1;
+      return;
+    }
+
     config = {
       provider: opts.provider,
       model: opts.model ?? providerDef.defaultModel,
@@ -146,6 +165,7 @@ export async function runConfig(opts: ConfigOptions): Promise<void> {
       whisperModel: opts.whisperModel ?? existing.whisperModel ?? DEFAULT_CONFIG.whisperModel,
       recordingMode: (opts.recordingMode as RecordingMode | undefined) ?? existing.recordingMode ?? DEFAULT_CONFIG.recordingMode,
       contextTurns,
+      device: (opts.device as DevicePreference | undefined) ?? existing.device ?? DEFAULT_CONFIG.device,
     };
   } else {
     config = await runInteractiveConfig();

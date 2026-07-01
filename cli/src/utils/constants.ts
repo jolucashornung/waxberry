@@ -68,6 +68,7 @@ export interface Config {
   whisperModel?: string;
   recordingMode?: RecordingMode;
   contextTurns?: number;
+  device?: 'auto' | 'cpu' | 'gpu';
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -78,6 +79,7 @@ export const DEFAULT_CONFIG: Config = {
   whisperModel: 'onnx-community/whisper-base',
   recordingMode: 'auto',
   contextTurns: 3,
+  device: 'auto',
 };
 
 // A prior exchange fed to LLM translators for conversational continuity.

@@ -8,11 +8,36 @@ import { fileURLToPath } from 'node:url';
 import * as ort from 'onnxruntime-node';
 import { createServer, int16ToWavBase64 } from './shared.js';
 import type { Routes } from './shared.js';
+import { ttsProviderAttempts, isDevicePreference } from '../utils/device.js';
 
 const execFileAsync = promisify(execFile);
 
 const VOICE_DIR = process.env['PIPER_VOICE_DIR'] ?? path.join(os.homedir(), '.live-translate', 'voices');
+const DEVICE_PREF = (() => {
+  const raw = process.env['TTS_DEVICE'] ?? 'auto';
+  return isDevicePreference(raw) ? raw : 'auto';
+})();
 const PORT = parseInt(process.env['PORT'] ?? '8003', 10);
+
+let resolvedProvider = 'cpu';
+
+// Tries each execution-provider set in order; the first session that creates wins. A GPU
+// provider absent from the installed onnxruntime-node build fails and falls back to CPU.
+async function createSession(modelPath: string): Promise<ort.InferenceSession> {
+  const attempts = ttsProviderAttempts(DEVICE_PREF, process.platform);
+  let lastError: unknown;
+  for (const executionProviders of attempts) {
+    try {
+      const session = await ort.InferenceSession.create(modelPath, { executionProviders });
+      resolvedProvider = executionProviders[0] ?? 'cpu';
+      return session;
+    } catch (err) {
+      lastError = err;
+      console.warn(`TTS: could not initialize on ${executionProviders[0]} (${(err as Error).message})`);
+    }
+  }
+  throw lastError;
+}
 
 const LANGUAGE_VOICE_MAP: Record<string, string> = {
   en: 'en_US-lessac-medium.onnx',
@@ -78,9 +103,7 @@ async function loadVoices(): Promise<Record<string, PiperVoice>> {
     console.log(`Loading voice for '${lang}': ${filename}`);
     const config = loadVoiceConfig(configPath);
     if (lang in LANGUAGE_LENGTH_SCALE) config.length_scale = LANGUAGE_LENGTH_SCALE[lang]!;
-    const session = await ort.InferenceSession.create(modelPath, {
-      executionProviders: ['cpu'],
-    });
+    const session = await createSession(modelPath);
     loaded[lang] = { session, config };
   }
   return loaded;
@@ -163,6 +186,7 @@ export const routes: Routes = {
   'GET /health': async () => ({
     status: 'ok',
     engine: 'piper',
+    device: resolvedProvider,
     loaded_voices: Object.keys(voices),
   }),
 

@@ -33,8 +33,9 @@ program
   .option('--whisper-model <model>', 'Whisper model for ASR (whisper-base, whisper-small, whisper-medium, whisper-large-v3)')
   .option('--recording-mode <mode>', 'Recording mode (auto, push-to-talk)')
   .option('--context-turns <n>', 'Prior conversation turns sent to LLM translators (0 disables)')
-  .action((opts: { provider?: string; model?: string; apiKey?: string; whisperModel?: string; recordingMode?: string; contextTurns?: string }) =>
-    runConfig({ provider: opts.provider, model: opts.model, apiKey: opts.apiKey, whisperModel: opts.whisperModel, recordingMode: opts.recordingMode, contextTurns: opts.contextTurns })
+  .option('--device <device>', 'Compute device for ASR/TTS (auto, cpu, gpu)')
+  .action((opts: { provider?: string; model?: string; apiKey?: string; whisperModel?: string; recordingMode?: string; contextTurns?: string; device?: string }) =>
+    runConfig({ provider: opts.provider, model: opts.model, apiKey: opts.apiKey, whisperModel: opts.whisperModel, recordingMode: opts.recordingMode, contextTurns: opts.contextTurns, device: opts.device })
   );
 
 program

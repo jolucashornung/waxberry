@@ -4,13 +4,45 @@ import { fileURLToPath } from 'node:url';
 import { pipeline, env } from '@huggingface/transformers';
 import { createServer, wavBase64ToFloat32 } from './shared.js';
 import type { Routes } from './shared.js';
+import { asrDeviceAttempts, isDevicePreference } from '../utils/device.js';
 
 env.cacheDir = path.join(os.homedir(), '.live-translate', 'models');
 
 const MODEL = process.env['WHISPER_MODEL'] ?? 'onnx-community/whisper-base';
+const DEVICE_PREF = (() => {
+  const raw = process.env['ASR_DEVICE'] ?? 'auto';
+  return isDevicePreference(raw) ? raw : 'auto';
+})();
 const PORT = parseInt(process.env['PORT'] ?? '8001', 10);
 
-const transcriber = await pipeline('automatic-speech-recognition', MODEL, { dtype: 'q8' });
+let resolvedDevice: 'cpu' | 'gpu' = 'cpu';
+
+// Minimal callable view of the ASR pipeline; the full transformers.js type is too large to
+// annotate and we only ever call it or cast it to PipelineInternals for the language probe.
+type Transcriber = (audio: Float32Array, options: Record<string, unknown>) => Promise<unknown>;
+
+// Tries each device/dtype attempt in order; the first to initialize wins. On GPU failure
+// (no CUDA/CoreML onnxruntime build) the 'auto' preference falls back to CPU rather than crashing.
+async function createTranscriber(): Promise<Transcriber> {
+  const attempts = asrDeviceAttempts(DEVICE_PREF);
+  let lastError: unknown;
+  for (const attempt of attempts) {
+    try {
+      const pipe = await pipeline('automatic-speech-recognition', MODEL, {
+        device: attempt.device,
+        dtype: attempt.dtype,
+      });
+      resolvedDevice = attempt.device;
+      return pipe as unknown as Transcriber;
+    } catch (err) {
+      lastError = err;
+      console.warn(`ASR: could not initialize on ${attempt.device} (${(err as Error).message})`);
+    }
+  }
+  throw lastError;
+}
+
+const transcriber = await createTranscriber();
 
 type PipelineInternals = {
   processor: (audio: Float32Array) => Promise<{ input_features: unknown }>;
@@ -69,7 +101,7 @@ export const routes: Routes = {
   'GET /health': async () => ({
     status: 'ok',
     model: MODEL,
-    device: 'cpu',
+    device: resolvedDevice,
   }),
 
   'POST /transcribe': async (body) => {

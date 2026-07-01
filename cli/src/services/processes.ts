@@ -119,6 +119,13 @@ function buildTranslationEnv(config: Config): NodeJS.ProcessEnv {
 function buildAsrEnv(config: Config): NodeJS.ProcessEnv {
   return {
     ...(config.whisperModel ? { WHISPER_MODEL: config.whisperModel } : {}),
+    ...(config.device ? { ASR_DEVICE: config.device } : {}),
+  };
+}
+
+function buildTtsEnv(config: Config): NodeJS.ProcessEnv {
+  return {
+    ...(config.device ? { TTS_DEVICE: config.device } : {}),
   };
 }
 
@@ -154,6 +161,7 @@ export async function startServices(
       PIPER_VOICE_DIR: getVoicesDir(),
       ...(svc.name === 'translation' ? buildTranslationEnv(config) : {}),
       ...(svc.name === 'asr'         ? buildAsrEnv(config)         : {}),
+      ...(svc.name === 'tts'         ? buildTtsEnv(config)         : {}),
       ...(svc.extraEnv ?? {}),
     };
 

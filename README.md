@@ -62,6 +62,20 @@ live-translate config --provider deepseek --api-key <key>
 
 Configuration is saved to `~/.live-translate/config.json`.
 
+### Other settings
+
+| Setting | Flag | Default | Description |
+|---------|------|---------|-------------|
+| Recording mode | `--recording-mode <auto\|push-to-talk>` | `auto` | `auto` stops recording when you stop speaking (silence detection); `push-to-talk` requires SPACE to start and stop |
+| Context turns | `--context-turns <n>` | `3` | Prior conversation turns sent to LLM translators for continuity (pronouns, topic, tone). `0` disables. Ignored by Opus-MT |
+| Compute device | `--device <auto\|cpu\|gpu>` | `auto` | `auto` uses the GPU if a CUDA/CoreML `onnxruntime-node` build is present, else CPU. `gpu` requires such a build; the stock package is CPU-only |
+
+```bash
+live-translate config --recording-mode push-to-talk
+live-translate config --context-turns 5
+live-translate config --device gpu
+```
+
 ## How It Works
 
 ```
