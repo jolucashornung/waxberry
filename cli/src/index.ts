@@ -31,8 +31,9 @@ program
   .option('--model <model>', 'Model name')
   .option('--api-key <key>', 'API key')
   .option('--whisper-model <model>', 'Whisper model for ASR (whisper-base, whisper-small, whisper-medium, whisper-large-v3)')
-  .action((opts: { provider?: string; model?: string; apiKey?: string; whisperModel?: string }) =>
-    runConfig({ provider: opts.provider, model: opts.model, apiKey: opts.apiKey, whisperModel: opts.whisperModel })
+  .option('--recording-mode <mode>', 'Recording mode (auto, push-to-talk)')
+  .action((opts: { provider?: string; model?: string; apiKey?: string; whisperModel?: string; recordingMode?: string }) =>
+    runConfig({ provider: opts.provider, model: opts.model, apiKey: opts.apiKey, whisperModel: opts.whisperModel, recordingMode: opts.recordingMode })
   );
 
 program

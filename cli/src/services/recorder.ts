@@ -6,8 +6,17 @@ import { resolveBinary } from '../utils/binaries.js';
 // Resolved once during startup via ensureRecorderReady(); synchronous after that.
 let resolvedRec = 'rec';
 
-export function buildRecordArgs(outputPath: string): string[] {
-  return ['-q', '-t', 'wav', '-r', '16000', '-c', '1', '-b', '16', outputPath];
+export interface RecordOptions {
+  // When true, sox stops on trailing silence so `rec` exits on its own (no second keypress).
+  autoStop?: boolean;
+}
+
+// sox `silence` effect: begin after speech (>3% for 0.1s), stop after 1.5s of trailing silence.
+const SILENCE_EFFECT = ['silence', '1', '0.1', '3%', '1', '1.5', '3%'];
+
+export function buildRecordArgs(outputPath: string, opts: RecordOptions = {}): string[] {
+  const base = ['-q', '-t', 'wav', '-r', '16000', '-c', '1', '-b', '16', outputPath];
+  return opts.autoStop ? [...base, ...SILENCE_EFFECT] : base;
 }
 
 export async function ensureRecorderReady(
@@ -25,11 +34,11 @@ export async function ensureRecorderReady(
   }
 }
 
-export function startRecording(outputPath: string): ChildProcess {
+export function startRecording(outputPath: string, opts: RecordOptions = {}): ChildProcess {
   const isSoxDirect = !resolvedRec.endsWith('rec');
-  const args = isSoxDirect
-    ? ['-q', '--default-device', '-t', 'wav', '-r', '16000', '-c', '1', '-b', '16', outputPath]
-    : ['-q', '-t', 'wav', '-r', '16000', '-c', '1', '-b', '16', outputPath];
+  const prefix = isSoxDirect ? ['-q', '--default-device'] : ['-q'];
+  const rest = ['-t', 'wav', '-r', '16000', '-c', '1', '-b', '16', outputPath];
+  const args = [...prefix, ...rest, ...(opts.autoStop ? SILENCE_EFFECT : [])];
   return spawn(resolvedRec, args);
 }
 

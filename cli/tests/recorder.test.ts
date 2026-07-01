@@ -15,9 +15,23 @@ describe('buildRecordArgs', () => {
     expect(args).toContain('16');
   });
 
-  it('includes the output path as the last argument', () => {
+  it('includes the output path as the last argument by default', () => {
     const args = buildRecordArgs('/custom/output.wav');
     expect(args[args.length - 1]).toBe('/custom/output.wav');
+  });
+
+  it('appends a silence effect when autoStop is enabled', () => {
+    const args = buildRecordArgs('/tmp/test.wav', { autoStop: true });
+    expect(args).toContain('silence');
+    // silence effect trails the output path
+    const outputIndex = args.indexOf('/tmp/test.wav');
+    expect(args.indexOf('silence')).toBeGreaterThan(outputIndex);
+  });
+
+  it('omits the silence effect when autoStop is disabled', () => {
+    const args = buildRecordArgs('/tmp/test.wav', { autoStop: false });
+    expect(args).not.toContain('silence');
+    expect(args[args.length - 1]).toBe('/tmp/test.wav');
   });
 });
 

@@ -20,11 +20,14 @@ function clearLine(): void {
   process.stdout.write('\r\x1b[K');
 }
 
-function printBanner(providerLabel: string): void {
+function printBanner(providerLabel: string, autoStop: boolean): void {
   console.log('');
   console.log(chalk.bold('  Live Translator — EN ↔ 中文'));
   console.log(`  Provider: ${providerLabel}`);
-  console.log('  Press SPACE to start/stop recording. Press Q to quit.');
+  const hint = autoStop
+    ? 'Press SPACE to talk, then pause — it translates automatically. Press Q to quit.'
+    : 'Press SPACE to start/stop recording. Press Q to quit.';
+  console.log(`  ${hint}`);
   console.log('');
 }
 
@@ -77,8 +80,9 @@ export async function runTranslate(): Promise<void> {
   const config = configExists() ? loadConfig() : { ...DEFAULT_CONFIG };
   const providerDef = PROVIDERS[config.provider];
   const providerLabel = config.model ? `${providerDef.name} (${config.model})` : providerDef.name;
+  const autoStop = (config.recordingMode ?? DEFAULT_CONFIG.recordingMode) === 'auto';
 
-  printBanner(providerLabel);
+  printBanner(providerLabel, autoStop);
   process.stdout.write(chalk.dim('  ▶ Ready\n'));
 
   let recording: ChildProcess | null = null;
@@ -178,7 +182,21 @@ export async function runTranslate(): Promise<void> {
     if (!recording) {
       recordingPath = getTmpRecordingPath();
       recordingStart = Date.now();
-      recording = startRecording(recordingPath);
+      recording = startRecording(recordingPath, { autoStop });
+      const thisRecording = recording;
+
+      // In auto mode, sox exits on trailing silence. Treat that self-exit as a stop-and-process,
+      // unless we already stopped it manually (SPACE / max timeout / cleanup set recording elsewhere).
+      thisRecording.on('close', () => {
+        if (recording !== thisRecording || !recordingPath) return;
+        cancelTimers();
+        const filePath = recordingPath;
+        const durationMs = Date.now() - recordingStart;
+        recording = null;
+        recordingPath = null;
+        clearLine();
+        void processRecording(filePath, durationMs);
+      });
 
       timerInterval = setInterval(() => {
         const elapsed = ((Date.now() - recordingStart) / 1000).toFixed(1);

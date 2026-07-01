@@ -1,6 +1,6 @@
 import { select, input, password } from '@inquirer/prompts';
 import chalk from 'chalk';
-import { PROVIDERS, WHISPER_MODELS, DEFAULT_CONFIG, type ProviderKey, type Config } from '../utils/constants.js';
+import { PROVIDERS, WHISPER_MODELS, RECORDING_MODES, DEFAULT_CONFIG, type ProviderKey, type RecordingMode, type Config } from '../utils/constants.js';
 import { saveConfig, loadConfig, maskApiKey, isValidProvider } from '../services/configStore.js';
 import { logger } from '../utils/logger.js';
 
@@ -9,6 +9,11 @@ interface ConfigOptions {
   model?: string;
   apiKey?: string;
   whisperModel?: string;
+  recordingMode?: string;
+}
+
+function isValidRecordingMode(value: string): value is RecordingMode {
+  return (RECORDING_MODES as readonly string[]).includes(value);
 }
 
 async function runInteractiveConfig(): Promise<Config> {
@@ -59,7 +64,16 @@ async function runInteractiveConfig(): Promise<Config> {
     default: existing.whisperModel ?? DEFAULT_CONFIG.whisperModel,
   });
 
-  return { provider, model, apiKey, ollamaUrl, whisperModel };
+  const recordingMode = await select<RecordingMode>({
+    message: 'Choose a recording mode:',
+    choices: [
+      { name: 'auto — stop automatically when you stop speaking', value: 'auto' },
+      { name: 'push-to-talk — press SPACE to start and stop', value: 'push-to-talk' },
+    ],
+    default: existing.recordingMode ?? DEFAULT_CONFIG.recordingMode,
+  });
+
+  return { provider, model, apiKey, ollamaUrl, whisperModel, recordingMode };
 }
 
 function printSummary(config: Config): void {
@@ -70,6 +84,7 @@ function printSummary(config: Config): void {
   if (config.apiKey) console.log(`    API Key:   ${maskApiKey(config.apiKey)}`);
   if (config.provider === 'ollama') console.log(`    Ollama:    ${config.ollamaUrl}`);
   console.log(`    ASR model: ${config.whisperModel}`);
+  console.log(`    Recording: ${config.recordingMode}`);
   console.log('');
   console.log('  Run `live-translate start` to start translating.');
   console.log('');
@@ -89,12 +104,20 @@ export async function runConfig(opts: ConfigOptions): Promise<void> {
 
     const providerDef = PROVIDERS[opts.provider];
     const existing = loadConfig();
+
+    if (opts.recordingMode && !isValidRecordingMode(opts.recordingMode)) {
+      logger.error(`Unknown recording mode: ${opts.recordingMode}. Valid: ${RECORDING_MODES.join(', ')}`);
+      process.exitCode = 1;
+      return;
+    }
+
     config = {
       provider: opts.provider,
       model: opts.model ?? providerDef.defaultModel,
       apiKey: opts.apiKey ?? '',
       ollamaUrl: 'http://localhost:11434',
       whisperModel: opts.whisperModel ?? existing.whisperModel ?? DEFAULT_CONFIG.whisperModel,
+      recordingMode: (opts.recordingMode as RecordingMode | undefined) ?? existing.recordingMode ?? DEFAULT_CONFIG.recordingMode,
     };
   } else {
     config = await runInteractiveConfig();

@@ -57,12 +57,16 @@ export const PROVIDERS = {
 
 export type ProviderKey = keyof typeof PROVIDERS;
 
+export const RECORDING_MODES = ['auto', 'push-to-talk'] as const;
+export type RecordingMode = (typeof RECORDING_MODES)[number];
+
 export interface Config {
   provider: ProviderKey;
   model: string;
   apiKey: string;
   ollamaUrl: string;
   whisperModel?: string;
+  recordingMode?: RecordingMode;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -71,6 +75,7 @@ export const DEFAULT_CONFIG: Config = {
   apiKey: '',
   ollamaUrl: 'http://localhost:11434',
   whisperModel: 'onnx-community/whisper-base',
+  recordingMode: 'auto',
 };
 
 export const SERVICE_PORTS = {
