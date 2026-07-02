@@ -146,3 +146,19 @@ describe('int16ToWavBase64 (shared, via tts context)', () => {
     }
   });
 });
+
+describe('GET /health', () => {
+  it('reports degraded when no voices are loaded', async () => {
+    vi.resetModules();
+    process.env['PIPER_VOICE_DIR'] = '/nonexistent-voices-dir';
+    try {
+      const mod = await import('../../src/server/tts.js');
+      const health = await mod.routes['GET /health']!({}) as Record<string, unknown>;
+
+      expect(health['status']).toBe('degraded');
+      expect(health['loaded_voices']).toEqual([]);
+    } finally {
+      delete process.env['PIPER_VOICE_DIR'];
+    }
+  });
+});

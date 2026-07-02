@@ -134,13 +134,15 @@ export function textToPhonemeIds(ipa: string, config: VoiceConfig): number[] {
 const espeakBin = await resolveBinary('espeak-ng');
 
 async function phonemize(text: string, espeakVoice: string): Promise<string> {
+  // espeak-ng writes non-fatal warnings (unknown words, voice notes) to stderr while still
+  // emitting valid IPA — only a non-zero exit (execFileAsync throws) is an actual failure.
   const { stdout, stderr } = await execFileAsync(
     espeakBin,
     ['-v', espeakVoice, '--ipa', '-q', '--', text],
     { timeout: 30_000 },
   );
   if (stderr.trim()) {
-    throw new Error(`espeak-ng error: ${stderr.trim()}`);
+    console.warn(`espeak-ng warning: ${stderr.trim()}`);
   }
   const lines = stdout.split('\n').map(l => l.trim()).filter(Boolean);
   return lines.join(' ');
@@ -183,8 +185,10 @@ async function synthesize(voice: PiperVoice, text: string): Promise<Int16Array> 
 const voices = await loadVoices();
 
 export const routes: Routes = {
+  // A service with no voices answers every synthesis request with an error — report that as
+  // degraded so orchestrator health reflects it instead of staying green.
   'GET /health': async () => ({
-    status: 'ok',
+    status: Object.keys(voices).length > 0 ? 'ok' : 'degraded',
     engine: 'piper',
     device: resolvedProvider,
     loaded_voices: Object.keys(voices),

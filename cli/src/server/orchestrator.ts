@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { createServer } from './shared.js';
+import { createServer, logLine } from './shared.js';
 import type { Routes } from './shared.js';
 
 const ASR_URL = process.env['ASR_URL'] ?? 'http://localhost:8001';
@@ -94,50 +94,78 @@ export const routes: Routes = {
     };
   },
 
+  // The one-line log per request is the only pipeline trace across the four services — a failed
+  // request previously left nothing in any log.
   'POST /translate': async (body) => {
-    const req = body as { audio_base64: string; sample_rate?: number; context?: ContextTurn[] };
-    if (!req.audio_base64) {
-      throw new Error('Invalid request: audio_base64 is required');
+    const startedAt = Date.now();
+    try {
+      const result = await handleTranslate(body);
+      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+      const summary = 'error' in result ? `rejected (${result.error})` : `ok lang=${result.detected_language}`;
+      logLine(`POST /translate ${elapsed}s ${summary}`);
+      return result;
+    } catch (err) {
+      const elapsed = ((Date.now() - startedAt) / 1000).toFixed(1);
+      logLine(`POST /translate ${elapsed}s failed: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
     }
-
-    const sampleRate = req.sample_rate ?? 16000;
-    const context = Array.isArray(req.context) ? req.context : [];
-    const asrResult = await callAsr(req.audio_base64, sampleRate);
-    const { text: originalText, language: detectedLanguage } = asrResult;
-
-    if (!originalText.trim()) {
-      return {
-        error: 'No speech detected in the audio.',
-        detected_language: detectedLanguage,
-        original_text: originalText,
-      };
-    }
-
-    if (!SUPPORTED_LANGUAGES.has(detectedLanguage)) {
-      return {
-        error: `Unsupported language detected: '${detectedLanguage}'. This translator supports English and Mandarin only.`,
-        detected_language: detectedLanguage,
-        original_text: originalText,
-      };
-    }
-
-    const targetLanguage = detectedLanguage === 'en' ? 'zh' : 'en';
-
-    const translationResult = await callTranslation(originalText, detectedLanguage, targetLanguage, context);
-    const { translated_text: translatedText } = translationResult;
-
-    const ttsResult = await callTts(translatedText, targetLanguage);
-
-    return {
-      original_text: originalText,
-      detected_language: detectedLanguage,
-      translated_text: translatedText,
-      target_language: targetLanguage,
-      audio_base64: ttsResult.audio_base64,
-      mime_type: ttsResult.mime_type,
-    };
   },
 };
+
+type TranslateResult =
+  | { error: string; detected_language: string; original_text: string }
+  | {
+      original_text: string;
+      detected_language: string;
+      translated_text: string;
+      target_language: string;
+      audio_base64: string;
+      mime_type: string;
+    };
+
+async function handleTranslate(body: unknown): Promise<TranslateResult> {
+  const req = body as { audio_base64: string; sample_rate?: number; context?: ContextTurn[] };
+  if (!req.audio_base64) {
+    throw new Error('Invalid request: audio_base64 is required');
+  }
+
+  const sampleRate = req.sample_rate ?? 16000;
+  const context = Array.isArray(req.context) ? req.context : [];
+  const asrResult = await callAsr(req.audio_base64, sampleRate);
+  const { text: originalText, language: detectedLanguage } = asrResult;
+
+  if (!originalText.trim()) {
+    return {
+      error: 'No speech detected in the audio.',
+      detected_language: detectedLanguage,
+      original_text: originalText,
+    };
+  }
+
+  if (!SUPPORTED_LANGUAGES.has(detectedLanguage)) {
+    return {
+      error: `Unsupported language detected: '${detectedLanguage}'. This translator supports English and Mandarin only.`,
+      detected_language: detectedLanguage,
+      original_text: originalText,
+    };
+  }
+
+  const targetLanguage = detectedLanguage === 'en' ? 'zh' : 'en';
+
+  const translationResult = await callTranslation(originalText, detectedLanguage, targetLanguage, context);
+  const { translated_text: translatedText } = translationResult;
+
+  const ttsResult = await callTts(translatedText, targetLanguage);
+
+  return {
+    original_text: originalText,
+    detected_language: detectedLanguage,
+    translated_text: translatedText,
+    target_language: targetLanguage,
+    audio_base64: ttsResult.audio_base64,
+    mime_type: ttsResult.mime_type,
+  };
+}
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   createServer(routes, PORT);

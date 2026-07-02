@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wavBase64ToFloat32, int16ToWavBase64 } from '../../src/server/shared.js';
+import { wavBase64ToFloat32, int16ToWavBase64, createServer } from '../../src/server/shared.js';
 
 function makeWavBase64(samples: Int16Array, sampleRate: number): string {
   return int16ToWavBase64(samples, sampleRate);
@@ -80,5 +80,80 @@ describe('wavBase64ToFloat32', () => {
     }
     const b64Second = int16ToWavBase64(reconstructed, 16000);
     expect(b64Second).toBe(b64First);
+  });
+});
+
+describe('wavBase64ToFloat32 — malformed WAV guards', () => {
+  function wavWith(mutate: (buf: Buffer) => void): string {
+    const pcm = new Int16Array(16);
+    const buf = Buffer.from(int16ToWavBase64(pcm, 16000), 'base64');
+    mutate(buf);
+    return buf.toString('base64');
+  }
+
+  it('rejects a non-PCM format code', () => {
+    const b64 = wavWith(buf => buf.writeUInt16LE(3, 20)); // IEEE float
+    expect(() => wavBase64ToFloat32(b64)).toThrow('expected PCM (format 1), got format 3');
+  });
+
+  it('rejects zero channels', () => {
+    const b64 = wavWith(buf => buf.writeUInt16LE(0, 22));
+    expect(() => wavBase64ToFloat32(b64)).toThrow('zero channels');
+  });
+});
+
+describe('createServer — request body handling', () => {
+  async function withServer(
+    routes: Parameters<typeof createServer>[0],
+    run: (baseUrl: string) => Promise<void>
+  ): Promise<void> {
+    const server = createServer(routes, 0);
+    await new Promise<void>(resolve => server.once('listening', resolve));
+    const address = server.address();
+    if (address === null || typeof address === 'string') throw new Error('no port');
+    try {
+      await run(`http://127.0.0.1:${address.port}`);
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  }
+
+  it('decodes multi-byte UTF-8 split across chunk boundaries intact', async () => {
+    await withServer(
+      { 'POST /echo': async (body) => body },
+      async (baseUrl) => {
+        // Large enough body that Node delivers it in multiple chunks; CJK characters make any
+        // per-chunk decoding visible as replacement chars.
+        const text = '你好世界，今天天气很好。'.repeat(30000);
+        const res = await fetch(`${baseUrl}/echo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        });
+        expect(res.status).toBe(200);
+        const echoed = await res.json() as { text: string };
+        expect(echoed.text).toBe(text);
+      }
+    );
+  });
+
+  it('rejects a body over the size limit with a 400', async () => {
+    await withServer(
+      { 'POST /echo': async (body) => body },
+      async (baseUrl) => {
+        const res = await fetch(`${baseUrl}/echo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: `{"blob":"${'a'.repeat(33 * 1024 * 1024)}"}`,
+        }).catch(() => null);
+        // The server destroys the connection after rejecting; either a 400 arrives or the
+        // socket resets before the response — both mean the body was refused.
+        if (res !== null) {
+          expect(res.status).toBe(400);
+          const body = await res.json() as { error: string };
+          expect(body.error).toContain('exceeds');
+        }
+      }
+    );
   });
 });

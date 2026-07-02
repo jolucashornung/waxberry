@@ -203,12 +203,34 @@ async function translate(text: string, sourceLang: string, targetLang: string, c
   }
 }
 
+// Reachability probe so health reflects the actual translation backend, not just this process.
+async function isOllamaReachable(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    const response = await fetch(`${OLLAMA_URL}/api/tags`, { signal: controller.signal }).finally(() => clearTimeout(timer));
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 export const routes: Routes = {
-  'GET /health': async () => ({
-    status: 'ok',
-    provider: PROVIDER,
-    ...(PROVIDER === 'opus-mt' ? { models: ['Xenova/opus-mt-en-zh', 'Xenova/opus-mt-zh-en'] } : {}),
-  }),
+  'GET /health': async () => {
+    if (PROVIDER === 'ollama') {
+      const reachable = await isOllamaReachable();
+      return {
+        status: reachable ? 'ok' : 'degraded',
+        provider: PROVIDER,
+        ollama_reachable: reachable,
+      };
+    }
+    return {
+      status: 'ok',
+      provider: PROVIDER,
+      ...(PROVIDER === 'opus-mt' ? { models: ['Xenova/opus-mt-en-zh', 'Xenova/opus-mt-zh-en'] } : {}),
+    };
+  },
 
   'POST /translate': async (body) => {
     const req = body as { text: string; source_lang: string; target_lang: string; context?: ContextTurn[] };

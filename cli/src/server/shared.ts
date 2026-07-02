@@ -5,11 +5,31 @@ import * as path from 'node:path';
 
 export type Routes = Record<string, (body: unknown) => Promise<unknown>>;
 
+// Generous bound for base64 WAV payloads (30 s of 16 kHz mono is ~1.3 MB base64) while still
+// preventing an unbounded body from exhausting memory.
+const MAX_BODY_BYTES = 32 * 1024 * 1024;
+
+export function logLine(message: string): void {
+  console.log(`${new Date().toISOString()} ${message}`);
+}
+
 function readBody(req: http.IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    let raw = '';
-    req.on('data', (chunk: Buffer) => { raw += chunk.toString(); });
+    // Collect chunks and decode once at the end — decoding per chunk corrupts any multi-byte
+    // UTF-8 character (e.g. Chinese text) that a TCP chunk boundary splits.
+    const chunks: Buffer[] = [];
+    let received = 0;
+    req.on('data', (chunk: Buffer) => {
+      received += chunk.length;
+      if (received > MAX_BODY_BYTES) {
+        reject(new Error(`Invalid request: body exceeds ${MAX_BODY_BYTES} bytes`));
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
     req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
       try {
         resolve(raw ? JSON.parse(raw) : {});
       } catch {
@@ -29,7 +49,7 @@ function sendJson(res: http.ServerResponse, status: number, data: unknown): void
   res.end(body);
 }
 
-export function createServer(routes: Routes, port: number): void {
+export function createServer(routes: Routes, port: number): http.Server {
   const server = http.createServer(async (req, res) => {
     const method = req.method ?? 'GET';
     const url = req.url?.split('?')[0] ?? '/';
@@ -52,9 +72,20 @@ export function createServer(routes: Routes, port: number): void {
     }
   });
 
-  server.listen(port, () => {
-    console.log(`Service listening on port ${port}`);
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      logLine(`Port ${port} is already in use — another instance may still be running. Run \`live-translate stop\` first.`);
+    } else {
+      logLine(`Server error: ${err.message}`);
+    }
+    process.exit(1);
   });
+
+  server.listen(port, () => {
+    logLine(`Service listening on port ${port}`);
+  });
+
+  return server;
 }
 
 const WAV_HEADER_BYTES = 44;
@@ -65,10 +96,17 @@ export function wavBase64ToFloat32(b64: string): { samples: Float32Array; sample
     throw new Error('Invalid WAV: buffer too short');
   }
 
+  const formatCode = buf.readUInt16LE(20);
   const sampleRate = buf.readUInt32LE(24);
   const numChannels = buf.readUInt16LE(22);
   const bitsPerSample = buf.readUInt16LE(34);
 
+  if (formatCode !== 1) {
+    throw new Error(`Invalid WAV: expected PCM (format 1), got format ${formatCode}`);
+  }
+  if (numChannels === 0) {
+    throw new Error('Invalid WAV: zero channels');
+  }
   if (bitsPerSample !== 16) {
     throw new Error(`Invalid WAV: expected 16-bit PCM, got ${bitsPerSample}-bit`);
   }
