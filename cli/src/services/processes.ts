@@ -152,6 +152,8 @@ export async function startServices(
   for (const svc of SERVICE_DEFS) {
     const existing = readPid(svc.name);
     if (existing !== null && isProcessRunning(existing)) continue;
+    // PID file points at a dead process — clear it so it can't mask failures later.
+    fs.rmSync(pidFile(svc.name), { force: true });
 
     const script = path.join(pkgRoot, 'dist', 'server', `${svc.name}.js`);
 
@@ -177,13 +179,35 @@ export async function startServices(
   }
 }
 
+const STOP_GRACE_MS = 3000;
+const STOP_POLL_MS = 100;
+
+// A service stuck in a model load can ignore SIGTERM; without the SIGKILL fallback it survives as
+// an orphan holding its port, and the next start fails health checks with no visible cause.
 export async function stopServices(): Promise<void> {
+  const stopping: Array<{ name: string; pid: number }> = [];
+
   for (const svc of SERVICE_DEFS) {
     const pid = readPid(svc.name);
     if (pid !== null) {
       try { process.kill(pid, 'SIGTERM'); } catch { /* already dead */ }
-      fs.rmSync(pidFile(svc.name), { force: true });
+      stopping.push({ name: svc.name, pid });
     }
+  }
+
+  const deadline = Date.now() + STOP_GRACE_MS;
+  while (Date.now() < deadline && stopping.some(s => isProcessRunning(s.pid))) {
+    await new Promise(resolve => setTimeout(resolve, STOP_POLL_MS));
+  }
+
+  for (const { pid } of stopping) {
+    if (isProcessRunning(pid)) {
+      try { process.kill(pid, 'SIGKILL'); } catch { /* died in the meantime */ }
+    }
+  }
+
+  for (const svc of SERVICE_DEFS) {
+    fs.rmSync(pidFile(svc.name), { force: true });
   }
 }
 

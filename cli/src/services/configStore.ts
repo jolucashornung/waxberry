@@ -17,7 +17,22 @@ export function loadConfig(): Config {
     return { ...DEFAULT_CONFIG };
   }
   const raw = fs.readFileSync(configPath, 'utf8');
-  return { ...DEFAULT_CONFIG, ...(JSON.parse(raw) as Partial<Config>) };
+
+  let parsed: Partial<Config>;
+  try {
+    parsed = JSON.parse(raw) as Partial<Config>;
+  } catch {
+    throw new Error(`Config file is not valid JSON: ${configPath}. Fix it or re-run \`live-translate config\`.`);
+  }
+
+  const config = { ...DEFAULT_CONFIG, ...parsed };
+  if (!isValidProvider(config.provider)) {
+    throw new Error(
+      `Config file has unknown provider '${String(config.provider)}': ${configPath}. `
+      + `Valid: ${Object.keys(PROVIDERS).join(', ')}. Re-run \`live-translate config\`.`
+    );
+  }
+  return config;
 }
 
 export function saveConfig(config: Config): void {

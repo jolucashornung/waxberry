@@ -150,4 +150,52 @@ describe('non-interactive config via runConfig', () => {
     const loaded = loadConfig();
     expect(loaded.whisperModel).toBe('onnx-community/whisper-medium');
   });
+
+  it('preserves a stored API key when updating an unrelated flag', async () => {
+    saveConfig({ ...DEFAULT_CONFIG, provider: 'anthropic', model: 'claude-haiku-4-5-20251001', apiKey: 'sk-ant-keep-me' });
+    const { runConfig } = await import('../src/commands/config.js');
+    await runConfig({ provider: 'anthropic', whisperModel: 'onnx-community/whisper-small' });
+
+    const loaded = loadConfig();
+    expect(loaded.apiKey).toBe('sk-ant-keep-me');
+    expect(loaded.model).toBe('claude-haiku-4-5-20251001');
+    expect(loaded.whisperModel).toBe('onnx-community/whisper-small');
+  });
+
+  it('accepts flags without --provider and keeps the stored provider', async () => {
+    saveConfig({ ...DEFAULT_CONFIG, provider: 'ollama', model: 'qwen2.5:7b' });
+    const { runConfig } = await import('../src/commands/config.js');
+    await runConfig({ recordingMode: 'push-to-talk' });
+
+    const loaded = loadConfig();
+    expect(loaded.provider).toBe('ollama');
+    expect(loaded.model).toBe('qwen2.5:7b');
+    expect(loaded.recordingMode).toBe('push-to-talk');
+  });
+
+  it('resets the model to the new provider default when switching providers', async () => {
+    saveConfig({ ...DEFAULT_CONFIG, provider: 'ollama', model: 'qwen2.5:7b' });
+    const { runConfig } = await import('../src/commands/config.js');
+    await runConfig({ provider: 'openai' });
+
+    const loaded = loadConfig();
+    expect(loaded.provider).toBe('openai');
+    expect(loaded.model).toBe('gpt-4o-mini');
+  });
+});
+
+describe('loadConfig hardening', () => {
+  it('throws a clear error for a corrupt config file', () => {
+    fs.mkdirSync(path.join(testHome, '.live-translate'), { recursive: true });
+    fs.writeFileSync(getConfigPath(), '{ not json');
+
+    expect(() => loadConfig()).toThrow('not valid JSON');
+  });
+
+  it('throws a clear error for an unknown provider in the config file', () => {
+    fs.mkdirSync(path.join(testHome, '.live-translate'), { recursive: true });
+    fs.writeFileSync(getConfigPath(), JSON.stringify({ provider: 'not-a-provider' }));
+
+    expect(() => loadConfig()).toThrow("unknown provider 'not-a-provider'");
+  });
 });

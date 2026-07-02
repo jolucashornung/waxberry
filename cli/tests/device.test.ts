@@ -19,8 +19,11 @@ describe('asrDeviceAttempts', () => {
     expect(asrDeviceAttempts('cpu')).toEqual([{ device: 'cpu', dtype: 'q8' }]);
   });
 
-  it('gpu preference yields a single GPU/fp16 attempt', () => {
-    expect(asrDeviceAttempts('gpu')).toEqual([{ device: 'gpu', dtype: 'fp16' }]);
+  it('gpu preference falls back to CPU so a CPU-only build can still start', () => {
+    expect(asrDeviceAttempts('gpu')).toEqual([
+      { device: 'gpu', dtype: 'fp16' },
+      { device: 'cpu', dtype: 'q8' },
+    ]);
   });
 
   it('auto tries GPU first, then falls back to CPU', () => {
@@ -32,17 +35,17 @@ describe('asrDeviceAttempts', () => {
 });
 
 describe('ttsProviderAttempts', () => {
-  it('uses CoreML as the GPU provider on macOS', () => {
-    expect(ttsProviderAttempts('gpu', 'darwin')).toEqual([['coreml']]);
+  it('explicit gpu tries CoreML on macOS, then falls back to CPU', () => {
+    expect(ttsProviderAttempts('gpu', 'darwin')).toEqual([['coreml'], ['cpu']]);
   });
 
-  it('uses CUDA as the GPU provider on non-macOS', () => {
-    expect(ttsProviderAttempts('gpu', 'linux')).toEqual([['cuda']]);
+  it('explicit gpu tries CUDA on non-macOS, then falls back to CPU', () => {
+    expect(ttsProviderAttempts('gpu', 'linux')).toEqual([['cuda'], ['cpu']]);
   });
 
-  it('auto tries the platform GPU provider, then CPU', () => {
-    expect(ttsProviderAttempts('auto', 'linux')).toEqual([['cuda'], ['cpu']]);
-    expect(ttsProviderAttempts('auto', 'darwin')).toEqual([['coreml'], ['cpu']]);
+  it('auto resolves to CPU (CoreML partitioning slows Piper down)', () => {
+    expect(ttsProviderAttempts('auto', 'linux')).toEqual([['cpu']]);
+    expect(ttsProviderAttempts('auto', 'darwin')).toEqual([['cpu']]);
   });
 
   it('cpu preference yields only the CPU provider', () => {

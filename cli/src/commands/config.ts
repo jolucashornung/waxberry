@@ -3,7 +3,11 @@ import chalk from 'chalk';
 import { PROVIDERS, WHISPER_MODELS, RECORDING_MODES, DEFAULT_CONFIG, type ProviderKey, type RecordingMode, type Config } from '../utils/constants.js';
 import { isDevicePreference, type DevicePreference } from '../utils/device.js';
 import { saveConfig, loadConfig, maskApiKey, isValidProvider } from '../services/configStore.js';
+import { anyServiceRunning } from '../services/processes.js';
 import { logger } from '../utils/logger.js';
+
+// Fields the background services read at spawn time — changing them requires a restart.
+const SERVICE_FIELDS: ReadonlyArray<keyof Config> = ['provider', 'model', 'apiKey', 'ollamaUrl', 'whisperModel', 'device'];
 
 interface ConfigOptions {
   provider?: string;
@@ -122,17 +126,17 @@ function printSummary(config: Config): void {
 export async function runConfig(opts: ConfigOptions): Promise<void> {
   logger.header('Live Translator — Configuration');
 
+  const before = loadConfig();
   let config: Config;
 
-  if (opts.provider) {
-    if (!isValidProvider(opts.provider)) {
+  const hasFlags = Object.values(opts).some(value => value !== undefined);
+
+  if (hasFlags) {
+    if (opts.provider !== undefined && !isValidProvider(opts.provider)) {
       logger.error(`Unknown provider: ${opts.provider}. Valid: ${Object.keys(PROVIDERS).join(', ')}`);
       process.exitCode = 1;
       return;
     }
-
-    const providerDef = PROVIDERS[opts.provider];
-    const existing = loadConfig();
 
     if (opts.recordingMode && !isValidRecordingMode(opts.recordingMode)) {
       logger.error(`Unknown recording mode: ${opts.recordingMode}. Valid: ${RECORDING_MODES.join(', ')}`);
@@ -140,7 +144,7 @@ export async function runConfig(opts: ConfigOptions): Promise<void> {
       return;
     }
 
-    let contextTurns = existing.contextTurns ?? DEFAULT_CONFIG.contextTurns;
+    let contextTurns = before.contextTurns ?? DEFAULT_CONFIG.contextTurns;
     if (opts.contextTurns !== undefined) {
       const parsed = Number(opts.contextTurns);
       if (!Number.isInteger(parsed) || parsed < 0) {
@@ -157,15 +161,21 @@ export async function runConfig(opts: ConfigOptions): Promise<void> {
       return;
     }
 
+    // Flags update only what they name; everything else (API key, Ollama URL, model) is preserved
+    // from the stored config. Switching providers resets the model to the new provider's default
+    // unless --model is given, since model names are provider-specific.
+    const provider = (opts.provider as ProviderKey | undefined) ?? before.provider;
+    const providerChanged = provider !== before.provider;
+
     config = {
-      provider: opts.provider,
-      model: opts.model ?? providerDef.defaultModel,
-      apiKey: opts.apiKey ?? '',
-      ollamaUrl: 'http://localhost:11434',
-      whisperModel: opts.whisperModel ?? existing.whisperModel ?? DEFAULT_CONFIG.whisperModel,
-      recordingMode: (opts.recordingMode as RecordingMode | undefined) ?? existing.recordingMode ?? DEFAULT_CONFIG.recordingMode,
+      provider,
+      model: opts.model ?? (providerChanged ? PROVIDERS[provider].defaultModel : before.model),
+      apiKey: opts.apiKey ?? before.apiKey,
+      ollamaUrl: before.ollamaUrl || DEFAULT_CONFIG.ollamaUrl,
+      whisperModel: opts.whisperModel ?? before.whisperModel ?? DEFAULT_CONFIG.whisperModel,
+      recordingMode: (opts.recordingMode as RecordingMode | undefined) ?? before.recordingMode ?? DEFAULT_CONFIG.recordingMode,
       contextTurns,
-      device: (opts.device as DevicePreference | undefined) ?? existing.device ?? DEFAULT_CONFIG.device,
+      device: (opts.device as DevicePreference | undefined) ?? before.device ?? DEFAULT_CONFIG.device,
     };
   } else {
     config = await runInteractiveConfig();
@@ -174,4 +184,11 @@ export async function runConfig(opts: ConfigOptions): Promise<void> {
   saveConfig(config);
   console.log(chalk.green('  ✓ Configuration saved to ~/.live-translate/config.json'));
   printSummary(config);
+
+  const serviceSettingsChanged = SERVICE_FIELDS.some(field => before[field] !== config[field]);
+  if (serviceSettingsChanged && anyServiceRunning()) {
+    console.log(chalk.yellow('  ⚠ Services are still running with the previous settings.'));
+    console.log(chalk.yellow('    Run `live-translate stop && live-translate start` to apply the change.'));
+    console.log('');
+  }
 }

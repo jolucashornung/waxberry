@@ -15,6 +15,26 @@ function describeService(details: Record<string, unknown>): string {
   return '';
 }
 
+// Services read their settings at spawn time; when a running service reports different values
+// than the config file, only a restart applies the change — surface that instead of hiding it.
+function findConfigDrift(
+  services: Array<{ name: string; details: Record<string, unknown> }>,
+  config: { provider: string; whisperModel?: string }
+): string[] {
+  const drift: string[] = [];
+  for (const service of services) {
+    const runningModel = service.details['model'];
+    const runningProvider = service.details['provider'];
+    if (service.name === 'ASR' && typeof runningModel === 'string' && config.whisperModel && runningModel !== config.whisperModel) {
+      drift.push(`ASR runs ${runningModel}, configured: ${config.whisperModel}`);
+    }
+    if (service.name === 'Translation' && typeof runningProvider === 'string' && runningProvider !== config.provider) {
+      drift.push(`Translation runs ${runningProvider}, configured: ${config.provider}`);
+    }
+  }
+  return drift;
+}
+
 export async function runStatus(): Promise<void> {
   logger.header('Live Translator — Status');
 
@@ -43,6 +63,15 @@ export async function runStatus(): Promise<void> {
     if (config.model) console.log(`  Model:     ${config.model}`);
     console.log(`  ASR model: ${config.whisperModel ?? 'onnx-community/whisper-base'}`);
     console.log(`  Privacy:   ${providerDef.local ? 'Fully local' : 'Audio local, text via API'}`);
+
+    const drift = findConfigDrift(status.services, config);
+    if (drift.length > 0) {
+      console.log('');
+      for (const line of drift) {
+        console.log(chalk.yellow(`  ⚠ ${line}`));
+      }
+      console.log(chalk.yellow('    Run `live-translate stop && live-translate start` to apply the configuration.'));
+    }
   }
 
   console.log('');
