@@ -48,11 +48,16 @@ async function setupOpusMtConfig(): Promise<void> {
   saveConfig({ provider: 'opus-mt', model: '', apiKey: '', ollamaUrl: '' });
 }
 
+// binaries.findBinary locates sox/espeak via `which` (execSync), so stubbing 'which sox' pins
+// the resolved path machine-independently. No rec/play sibling exists at the fake path, so the
+// mic/speaker checks invoke sox directly (-d flags).
 const FULL_PASS_EXECS: Record<string, string> = {
+  'which espeak-ng': '/mock/bin/espeak-ng',
+  'which sox': '/mock/bin/sox',
   'espeak-ng --version': 'eSpeak NG text-to-speech: 1.51.1  Data at: /usr/lib/x86_64-linux-gnu/espeak-ng-data',
   'sox --version': 'SoX v14.4.2',
-  'rec -n': '',
-  'play -n': '',
+  '-d -n trim': '',
+  '-n -d trim': '',
 };
 
 describe('runDoctor', () => {

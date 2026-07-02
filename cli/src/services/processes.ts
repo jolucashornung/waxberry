@@ -85,14 +85,20 @@ const VOICE_URLS: Array<{ url: string; file: string }> = [
   },
 ];
 
+const DOWNLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+
 async function downloadWithFetch(url: string, dest: string): Promise<void> {
   // Follow redirects — Node 18+ fetch follows redirects automatically
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   if (!response.ok) {
     throw new Error(`Failed to download ${url}: HTTP ${response.status}`);
   }
   const buf = await response.arrayBuffer();
-  fs.writeFileSync(dest, Buffer.from(buf));
+  // Write to a temp file and rename — an interrupted write must not leave a truncated
+  // voice file behind, or the existsSync check would skip re-downloading it forever.
+  const tmp = `${dest}.download`;
+  fs.writeFileSync(tmp, Buffer.from(buf));
+  fs.renameSync(tmp, dest);
 }
 
 async function downloadVoices(onProgress?: (msg: string) => void): Promise<void> {
@@ -173,9 +179,16 @@ export async function startServices(
       detached: true,
       stdio: ['ignore', logFd, logFd],
     });
+    // Without a listener, a failed spawn emits an unhandled 'error' event and crashes the CLI.
+    // The subsequent health check reports the service as down, which is the real signal.
+    proc.on('error', (err) => {
+      onProgress?.(`Failed to start ${svc.name}: ${err.message}`);
+    });
     proc.unref();
     fs.closeSync(logFd);
-    fs.writeFileSync(pidFile(svc.name), String(proc.pid));
+    if (proc.pid !== undefined) {
+      fs.writeFileSync(pidFile(svc.name), String(proc.pid));
+    }
   }
 }
 

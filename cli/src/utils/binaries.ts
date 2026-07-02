@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 //   3. system PATH                     — existing user install (e.g. Homebrew)
 // If none found, attempts to download from the waxberry GitHub release.
 
-const RELEASE_BASE = 'https://github.com/jolucashornung/live-translate/releases/download/binaries-v1';
+const RELEASE_BASE = 'https://github.com/waxberry-dev/live-translate/releases/download/binaries-v1';
 
 const DOWNLOAD_URLS: Record<string, Partial<Record<string, string>>> = {
   'espeak-ng': {
@@ -97,10 +97,15 @@ export async function resolveBinary(
   );
 }
 
-export function isBinaryAvailable(name: string): boolean {
+// Same lookup order as resolveBinary but synchronous and without the download step.
+export function findBinary(name: string): string | null {
   const cached = path.join(getCacheDir(), name);
-  if (existsAndExecutable(cached)) return true;
+  if (existsAndExecutable(cached)) return cached;
   const bundled = path.join(getPkgBinDir(), name);
-  if (existsAndExecutable(bundled)) return true;
-  return findOnPath(name) !== null;
+  if (existsAndExecutable(bundled)) return bundled;
+  return findOnPath(name);
+}
+
+export function isBinaryAvailable(name: string): boolean {
+  return findBinary(name) !== null;
 }

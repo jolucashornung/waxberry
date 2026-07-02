@@ -36,9 +36,9 @@ export async function ensureRecorderReady(
 
 export function startRecording(outputPath: string, opts: RecordOptions = {}): ChildProcess {
   const isSoxDirect = !resolvedRec.endsWith('rec');
-  const prefix = isSoxDirect ? ['-q', '--default-device'] : ['-q'];
-  const rest = ['-t', 'wav', '-r', '16000', '-c', '1', '-b', '16', outputPath];
-  const args = [...prefix, ...rest, ...(opts.autoStop ? SILENCE_EFFECT : [])];
+  const args = buildRecordArgs(outputPath, opts);
+  // Plain sox (no 'rec' symlink) needs the input device named explicitly.
+  if (isSoxDirect) args.splice(1, 0, '--default-device');
   return spawn(resolvedRec, args);
 }
 

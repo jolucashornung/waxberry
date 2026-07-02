@@ -1,9 +1,10 @@
 import { execSync } from 'child_process';
+import fs from 'fs';
 import chalk from 'chalk';
 import { loadConfig, configExists, maskApiKey, isValidProvider } from '../services/configStore.js';
 import { PROVIDERS } from '../utils/constants.js';
 import { logger } from '../utils/logger.js';
-import { isBinaryAvailable } from '../utils/binaries.js';
+import { isBinaryAvailable, findBinary } from '../utils/binaries.js';
 
 interface CheckResult {
   label: string;
@@ -46,8 +47,31 @@ function checkSox(): CheckResult {
   return { label: 'Sox', passed: true, detail };
 }
 
+// Uses the same sox binary the recorder resolves (cache/bundled/PATH) — checking a bare `rec`
+// from PATH reported failures on setups that work fine through the bundled sox.
+function soxSibling(tool: 'rec' | 'play'): string | null {
+  const sox = findBinary('sox');
+  if (!sox) return null;
+  const sibling = sox.replace(/([/\\])sox$/, `$1${tool}`);
+  try {
+    fs.accessSync(sibling, fs.constants.X_OK);
+    return sibling;
+  } catch {
+    return sox;
+  }
+}
+
+// sox is auto-downloaded on first start, so its absence is not a failure — but the device
+// can't be probed until then.
+const SOX_PENDING_DETAIL = 'Cannot test yet — sox downloads automatically on `live-translate start`';
+
 function checkMicrophone(): CheckResult {
-  const passed = tryExec('rec -n trim 0 0.1 2>&1') !== null;
+  const bin = soxSibling('rec');
+  if (!bin) {
+    return { label: 'Microphone', passed: true, detail: SOX_PENDING_DETAIL };
+  }
+  const args = bin.endsWith('rec') ? '-n trim 0 0.1' : '-d -n trim 0 0.1';
+  const passed = tryExec(`${JSON.stringify(bin)} ${args} 2>&1`) !== null;
   return {
     label: 'Microphone',
     passed,
@@ -56,7 +80,12 @@ function checkMicrophone(): CheckResult {
 }
 
 function checkSpeaker(): CheckResult {
-  const passed = tryExec('play -n trim 0 0.1 2>&1') !== null;
+  const bin = soxSibling('play');
+  if (!bin) {
+    return { label: 'Speaker', passed: true, detail: SOX_PENDING_DETAIL };
+  }
+  const args = bin.endsWith('play') ? '-n trim 0 0.1' : '-n -d trim 0 0.1';
+  const passed = tryExec(`${JSON.stringify(bin)} ${args} 2>&1`) !== null;
   return {
     label: 'Speaker',
     passed,

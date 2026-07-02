@@ -189,11 +189,30 @@ live-translate/
     └── records/             # design decisions and feature specs
 ```
 
-**Troubleshooting: Mandarin transcription is inaccurate?** Switch to a larger Whisper model:
+### Troubleshooting
+
+**Mandarin transcription is inaccurate?** Switch to a larger Whisper model:
 ```bash
 live-translate config --whisper-model onnx-community/whisper-large-v3
 live-translate stop && live-translate start
 ```
+
+**The transcript shows a phrase you never said (e.g. "Bye!", "Thank you")?** Whisper invents
+stock phrases when it receives silent or clipped audio. Wait for the "● Recording — speak now"
+cue before speaking — it appears only once the microphone is actually capturing. Silent
+recordings are rejected before transcription ("No speech detected").
+
+**Changed a setting but nothing happened?** Services read the configuration when they start.
+After changing provider, model, or device, restart them:
+```bash
+live-translate stop && live-translate start
+```
+`live-translate status` warns when running services differ from the saved configuration.
+
+**Translation fails while Ollama is busy?** Loading a large model can take longer than a
+request timeout. The service retries once automatically; if it still fails, wait a few seconds
+for the model load to finish and try again. `live-translate status` shows whether Ollama is
+reachable.
 
 ## Hardware
 

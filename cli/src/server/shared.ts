@@ -161,35 +161,42 @@ export function int16ToWavBase64(pcm: Int16Array, sampleRate: number): string {
   return buf.toString('base64');
 }
 
+const MAX_REDIRECTS = 5;
+
 export async function downloadFile(url: string, dest: string): Promise<void> {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
 
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
 
-    function request(currentUrl: string): void {
+    function fail(err: Error): void {
+      file.close(() => fs.unlink(dest, () => undefined));
+      reject(err);
+    }
+
+    function request(currentUrl: string, redirectsLeft: number): void {
       const client = currentUrl.startsWith('https') ? https : http;
       client.get(currentUrl, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          request(res.headers.location);
+          res.resume();
+          if (redirectsLeft === 0) {
+            fail(new Error(`Too many redirects downloading ${url}`));
+            return;
+          }
+          request(res.headers.location, redirectsLeft - 1);
           return;
         }
         if (res.statusCode !== 200) {
-          reject(new Error(`Failed to download ${currentUrl}: HTTP ${res.statusCode}`));
+          res.resume();
+          fail(new Error(`Failed to download ${currentUrl}: HTTP ${res.statusCode}`));
           return;
         }
         res.pipe(file);
         file.on('finish', () => file.close(() => resolve()));
-        file.on('error', (err) => {
-          fs.unlink(dest, () => undefined);
-          reject(err);
-        });
-      }).on('error', (err) => {
-        fs.unlink(dest, () => undefined);
-        reject(err);
-      });
+        file.on('error', fail);
+      }).on('error', fail);
     }
 
-    request(url);
+    request(url, MAX_REDIRECTS);
   });
 }

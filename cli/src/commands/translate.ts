@@ -177,7 +177,10 @@ export async function runTranslate(): Promise<void> {
 
       stopProcessingTimer();
       if (isTranslateError(result)) {
-        logger.error(`Unsupported language: ${result.detected_language}`);
+        logger.error(result.error);
+        if (result.original_text.trim()) {
+          console.log(chalk.dim(`  Heard: "${result.original_text}" (${result.detected_language})`));
+        }
       } else {
         console.log('');
         printResultBox(result.original_text, result.detected_language, result.translated_text, result.target_language);
@@ -210,13 +213,28 @@ export async function runTranslate(): Promise<void> {
 
   process.on('SIGINT', () => { cleanup(); process.exit(0); });
 
+  // Any crash must restore the terminal — exiting with stdin still in raw mode leaves the
+  // user's shell unusable (no echo, no line editing).
+  const exitOnFatal = (err: unknown): void => {
+    cleanup();
+    logger.error(`Unexpected error: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+  };
+  process.on('uncaughtException', exitOnFatal);
+  process.on('unhandledRejection', exitOnFatal);
+
   process.stdin.on('data', (key: string) => {
     if (key === '' || key === 'q' || key === 'Q') {
       cleanup();
       process.exit(0);
     }
 
-    if (key !== ' ' || isProcessing) return;
+    if (key !== ' ') return;
+    if (isProcessing) {
+      clearLine();
+      process.stdout.write(chalk.dim('  ⟳ Still processing — one moment...'));
+      return;
+    }
 
     if (!recording) {
       recordingPath = getTmpRecordingPath();
@@ -248,7 +266,11 @@ export async function runTranslate(): Promise<void> {
         recording = null;
         recordingPath = null;
         clearLine();
-        void processRecording(filePath, durationMs);
+        processRecording(filePath, durationMs).catch((err: unknown) => {
+          isProcessing = false;
+          logger.error(`Processing failed: ${err instanceof Error ? err.message : String(err)}`);
+          process.stdout.write(chalk.dim('  ▶ Ready\n'));
+        });
       });
 
       clearLine();
