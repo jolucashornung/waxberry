@@ -59,13 +59,28 @@ export async function checkHealth(): Promise<HealthStatus> {
   };
 }
 
+// Must exceed the orchestrator's worst case (60 s per downstream hop) — a shorter client timeout
+// cancels requests that would still succeed, e.g. while Ollama is loading a model.
+const TRANSLATE_TIMEOUT_MS = 120_000;
+
 export async function translate(audioBase64: string, context: ContextTurn[] = []): Promise<TranslateResponse> {
-  const res = await fetch(`${ORCHESTRATOR_URL}/translate`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ audio_base64: audioBase64, sample_rate: 16000, context }),
-    signal: AbortSignal.timeout(30000),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${ORCHESTRATOR_URL}/translate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio_base64: audioBase64, sample_rate: 16000, context }),
+      signal: AbortSignal.timeout(TRANSLATE_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      throw new Error('Timed out after 120s — a model may still be loading. Try again in a moment.');
+    }
+    if (err instanceof TypeError) {
+      throw new Error('Could not reach the translation services. Run `live-translate status` to check them.');
+    }
+    throw err;
+  }
 
   if (!res.ok) {
     throw new Error(`Orchestrator returned ${res.status}: ${await res.text()}`);

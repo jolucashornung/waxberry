@@ -37,7 +37,7 @@ vi.mock('../../src/server/shared.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/server/shared.js')>();
   return {
     ...actual,
-    wavBase64ToFloat32: vi.fn().mockReturnValue({ samples: new Float32Array(1), sampleRate: 16000 }),
+    wavBase64ToFloat32: vi.fn().mockReturnValue({ samples: new Float32Array(1600).fill(0.1), sampleRate: 16000 }),
   };
 });
 
@@ -177,5 +177,79 @@ describe('POST /transcribe — native language probe', () => {
 
   it('throws when audio_base64 is missing', async () => {
     await expect(transcribeHandler({})).rejects.toThrow('audio_base64 is required');
+  });
+});
+
+describe('POST /transcribe — silence and sample-rate guards', () => {
+  const transcribeHandler = async (body: unknown) =>
+    routes['POST /transcribe'](body);
+
+  beforeEach(async () => {
+    mockModelGenerate.mockReset();
+    mockProcessor.mockReset();
+    mockTranscriber.mockReset();
+    mockProcessor.mockResolvedValue({ input_features: new Float32Array(1) });
+    const shared = await import('../../src/server/shared.js');
+    vi.mocked(shared.wavBase64ToFloat32).mockReturnValue({ samples: new Float32Array(1600).fill(0.1), sampleRate: 16000 });
+  });
+
+  it('returns empty text without transcribing when audio is silent', async () => {
+    const shared = await import('../../src/server/shared.js');
+    vi.mocked(shared.wavBase64ToFloat32).mockReturnValueOnce({ samples: new Float32Array(1600), sampleRate: 16000 });
+
+    const result = await transcribeHandler({ audio_base64: 'dGVzdA==' }) as Record<string, unknown>;
+
+    expect(result.text).toBe('');
+    expect(result.confidence).toBe(0);
+    expect(mockTranscriber).not.toHaveBeenCalled();
+    expect(mockModelGenerate).not.toHaveBeenCalled();
+  });
+
+  it('returns empty text for zero-length audio', async () => {
+    const shared = await import('../../src/server/shared.js');
+    vi.mocked(shared.wavBase64ToFloat32).mockReturnValueOnce({ samples: new Float32Array(0), sampleRate: 16000 });
+
+    const result = await transcribeHandler({ audio_base64: 'dGVzdA==' }) as Record<string, unknown>;
+
+    expect(result.text).toBe('');
+    expect(mockTranscriber).not.toHaveBeenCalled();
+  });
+
+  it('rejects audio with a wrong sample rate', async () => {
+    const shared = await import('../../src/server/shared.js');
+    vi.mocked(shared.wavBase64ToFloat32).mockReturnValueOnce({ samples: new Float32Array(1600).fill(0.1), sampleRate: 44100 });
+
+    await expect(transcribeHandler({ audio_base64: 'dGVzdA==' })).rejects.toThrow('expected 16000 Hz, got 44100 Hz');
+  });
+
+  it('still transcribes audible audio', async () => {
+    mockModelGenerate.mockResolvedValue(langProbe(LANG_EN));
+    mockTranscriber.mockResolvedValue([{ text: 'Hello' }]);
+
+    const result = await transcribeHandler({ audio_base64: 'dGVzdA==' }) as Record<string, unknown>;
+
+    expect(result.text).toBe('Hello');
+    expect(mockTranscriber).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('rmsEnergy', () => {
+  let rmsEnergy: (samples: Float32Array) => number;
+
+  beforeAll(async () => {
+    const mod = await import('../../src/server/asr.js');
+    rmsEnergy = mod.rmsEnergy;
+  });
+
+  it('returns 0 for empty input', () => {
+    expect(rmsEnergy(new Float32Array(0))).toBe(0);
+  });
+
+  it('returns 0 for all-zero samples', () => {
+    expect(rmsEnergy(new Float32Array(100))).toBe(0);
+  });
+
+  it('returns the amplitude for a constant signal', () => {
+    expect(rmsEnergy(new Float32Array(100).fill(0.5))).toBeCloseTo(0.5, 6);
   });
 });

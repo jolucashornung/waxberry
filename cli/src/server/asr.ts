@@ -88,6 +88,21 @@ export function detectLanguage(text: string): 'en' | 'zh' {
 // Below this transcript length the char-ratio heuristic is unreliable, so skip the cross-check.
 const MIN_CROSS_CHECK_CHARS = 4;
 
+// Whisper hallucinates stock phrases ("Bye!", "Thank you") on silent or near-silent audio.
+// Clips whose RMS energy is below this floor carry no speech — answer empty instead of transcribing.
+const MIN_RMS_ENERGY = 0.005;
+const EXPECTED_SAMPLE_RATE = 16000;
+
+export function rmsEnergy(samples: Float32Array): number {
+  if (samples.length === 0) return 0;
+  let sumSquares = 0;
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i] ?? 0;
+    sumSquares += s * s;
+  }
+  return Math.sqrt(sumSquares / samples.length);
+}
+
 async function transcribeAs(samples: Float32Array, language: 'en' | 'zh'): Promise<string> {
   const result = await transcriber(samples, {
     language: language === 'zh' ? 'chinese' : 'english',
@@ -110,7 +125,15 @@ export const routes: Routes = {
       throw new Error('Invalid request: audio_base64 is required');
     }
 
-    const { samples } = wavBase64ToFloat32(req.audio_base64);
+    const { samples, sampleRate } = wavBase64ToFloat32(req.audio_base64);
+
+    if (sampleRate !== EXPECTED_SAMPLE_RATE) {
+      throw new Error(`Invalid WAV: expected ${EXPECTED_SAMPLE_RATE} Hz, got ${sampleRate} Hz`);
+    }
+
+    if (rmsEnergy(samples) < MIN_RMS_ENERGY) {
+      return { text: '', language: 'en', confidence: 0 };
+    }
 
     let language = await detectAudioLanguage(samples);
     let text = await transcribeAs(samples, language);

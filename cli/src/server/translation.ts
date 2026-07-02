@@ -73,9 +73,18 @@ async function translateWithOpusMt(text: string, sourceLang: string, targetLang:
   return (output as { translation_text: string }).translation_text ?? '';
 }
 
-async function translateWithOllama(text: string, sourceLang: string, targetLang: string, context: ContextTurn[]): Promise<string> {
-  const model = TRANSLATION_MODEL || 'qwen2.5:7b';
-  const response = await fetch(`${OLLAMA_URL}/api/chat`, {
+// A busy provider (e.g. Ollama loading a model) can hold the socket open indefinitely — without
+// this bound the request hangs until the orchestrator's 60 s abort and surfaces as an opaque 500.
+const PROVIDER_TIMEOUT_MS = 60_000;
+
+function fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROVIDER_TIMEOUT_MS);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+async function requestOllamaChat(model: string, sourceLang: string, targetLang: string, text: string, context: ContextTurn[]): Promise<string> {
+  const response = await fetchWithTimeout(`${OLLAMA_URL}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -90,13 +99,35 @@ async function translateWithOllama(text: string, sourceLang: string, targetLang:
   if (!response.ok) {
     throw new Error(`Ollama error: HTTP ${response.status}`);
   }
-  const data = await response.json() as { message: { content: string } };
+  const data = await response.json() as { message?: { content?: string } };
+  if (typeof data.message?.content !== 'string') {
+    throw new Error('Ollama error: unexpected response shape (no message.content)');
+  }
   return data.message.content.trim();
 }
 
+// While Ollama unloads one model and loads another (e.g. switching from a large model back to the
+// configured one) it may drop the connection or answer 5xx. Retry once on either; client errors
+// (bad model name, bad request) are not retried.
+function isRetryableOllamaError(err: unknown): boolean {
+  if (err instanceof TypeError) return true;
+  return err instanceof Error && /Ollama error: HTTP 5\d\d/.test(err.message);
+}
+
+async function translateWithOllama(text: string, sourceLang: string, targetLang: string, context: ContextTurn[]): Promise<string> {
+  const model = TRANSLATION_MODEL || 'qwen2.5:7b';
+  try {
+    return await requestOllamaChat(model, sourceLang, targetLang, text, context);
+  } catch (err) {
+    if (!isRetryableOllamaError(err)) throw err;
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return requestOllamaChat(model, sourceLang, targetLang, text, context);
+  }
+}
+
 async function translateWithAnthropic(text: string, sourceLang: string, targetLang: string, context: ContextTurn[]): Promise<string> {
-  const model = TRANSLATION_MODEL || 'claude-haiku-4-5-20241022';
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const model = TRANSLATION_MODEL || 'claude-haiku-4-5-20251001';
+  const response = await fetchWithTimeout('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -113,7 +144,10 @@ async function translateWithAnthropic(text: string, sourceLang: string, targetLa
   if (!response.ok) {
     throw new Error(`Anthropic error: HTTP ${response.status}`);
   }
-  const data = await response.json() as { content: Array<{ type: string; text: string }> };
+  const data = await response.json() as { content?: Array<{ type: string; text: string }> };
+  if (!Array.isArray(data.content)) {
+    throw new Error('Anthropic error: unexpected response shape (no content array)');
+  }
   const textContent = data.content.find(c => c.type === 'text');
   return textContent?.text.trim() ?? '';
 }
@@ -126,7 +160,7 @@ async function translateWithOpenAICompat(
   baseUrl: string,
 ): Promise<string> {
   const model = TRANSLATION_MODEL || (PROVIDER === 'deepseek' ? 'deepseek-chat' : 'gpt-4o-mini');
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const response = await fetchWithTimeout(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -143,8 +177,12 @@ async function translateWithOpenAICompat(
   if (!response.ok) {
     throw new Error(`${PROVIDER} error: HTTP ${response.status}`);
   }
-  const data = await response.json() as { choices: Array<{ message: { content: string } }> };
-  return data.choices[0]?.message.content.trim() ?? '';
+  const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  const content = data.choices?.[0]?.message?.content;
+  if (typeof content !== 'string') {
+    throw new Error(`${PROVIDER} error: unexpected response shape (no choices[0].message.content)`);
+  }
+  return content.trim();
 }
 
 async function translate(text: string, sourceLang: string, targetLang: string, context: ContextTurn[]): Promise<string> {

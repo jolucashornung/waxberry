@@ -110,4 +110,29 @@ describe('translate', () => {
 
     await expect(translate('base64audio')).rejects.toThrow('Orchestrator returned 500');
   });
+
+  it('explains a timeout in user terms', async () => {
+    mockFetch.mockRejectedValue(new DOMException('The operation timed out.', 'TimeoutError'));
+
+    await expect(translate('base64audio')).rejects.toThrow('a model may still be loading');
+  });
+
+  it('explains an unreachable orchestrator in user terms', async () => {
+    mockFetch.mockRejectedValue(new TypeError('fetch failed'));
+
+    await expect(translate('base64audio')).rejects.toThrow('Could not reach the translation services');
+  });
+
+  it('sends the conversation context in the request body', async () => {
+    mockFetch.mockResolvedValue(makeOkResponse({
+      original_text: 'Hello', detected_language: 'en', translated_text: '你好',
+      target_language: 'zh', audio_base64: 'abc', mime_type: 'audio/wav',
+    }));
+
+    await translate('base64audio', [{ source_text: 'Hi', target_text: '嗨' }]);
+
+    const init = mockFetch.mock.calls[0]?.[1] as RequestInit;
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body['context']).toEqual([{ source_text: 'Hi', target_text: '嗨' }]);
+  });
 });

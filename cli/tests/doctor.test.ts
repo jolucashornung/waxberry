@@ -142,7 +142,7 @@ describe('runDoctor', () => {
 
   it('Config check shows provider name when config exists', async () => {
     const { saveConfig } = await import('../src/services/configStore.js');
-    saveConfig({ provider: 'anthropic', model: 'claude-haiku-4-5-20241022', apiKey: 'sk-ant-test', ollamaUrl: '' });
+    saveConfig({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001', apiKey: 'sk-ant-test', ollamaUrl: '' });
     stubExecSync(FULL_PASS_EXECS);
 
     const { runDoctor } = await import('../src/commands/doctor.js');
@@ -154,7 +154,7 @@ describe('runDoctor', () => {
 
   it('API Key check shows masked key when cloud provider is configured', async () => {
     const { saveConfig } = await import('../src/services/configStore.js');
-    saveConfig({ provider: 'anthropic', model: 'claude-haiku-4-5-20241022', apiKey: 'sk-ant-api03-abcdef', ollamaUrl: '' });
+    saveConfig({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001', apiKey: 'sk-ant-api03-abcdef', ollamaUrl: '' });
     stubExecSync(FULL_PASS_EXECS);
 
     const { runDoctor } = await import('../src/commands/doctor.js');
@@ -167,7 +167,7 @@ describe('runDoctor', () => {
 
   it('API Key check fails when cloud provider has no key set', async () => {
     const { saveConfig } = await import('../src/services/configStore.js');
-    saveConfig({ provider: 'anthropic', model: 'claude-haiku-4-5-20241022', apiKey: '', ollamaUrl: '' });
+    saveConfig({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001', apiKey: '', ollamaUrl: '' });
     stubExecSync(FULL_PASS_EXECS);
 
     const { runDoctor } = await import('../src/commands/doctor.js');

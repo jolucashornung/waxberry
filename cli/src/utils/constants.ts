@@ -32,8 +32,8 @@ export const PROVIDERS = {
     local: false,
     requiresApiKey: true,
     requiresOllama: false,
-    defaultModel: 'claude-haiku-4-5-20241022',
-    models: ['claude-haiku-4-5-20241022', 'claude-sonnet-4-5-20241022'] as const,
+    defaultModel: 'claude-haiku-4-5-20251001',
+    models: ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5-20250929'] as const,
   },
   'openai': {
     name: 'OpenAI',

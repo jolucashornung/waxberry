@@ -46,7 +46,7 @@ describe('configExists', () => {
 
 describe('saveConfig and loadConfig', () => {
   it('writes valid JSON to the correct path', () => {
-    const config = { provider: 'anthropic' as const, model: 'claude-haiku-4-5-20241022', apiKey: 'sk-ant-test', ollamaUrl: 'http://localhost:11434' };
+    const config = { provider: 'anthropic' as const, model: 'claude-haiku-4-5-20251001', apiKey: 'sk-ant-test', ollamaUrl: 'http://localhost:11434' };
     saveConfig(config);
 
     const raw = fs.readFileSync(getConfigPath(), 'utf8');
@@ -109,11 +109,11 @@ describe('maskApiKey', () => {
 describe('non-interactive config via runConfig', () => {
   it('saves config with provider, model, and api-key flags', async () => {
     const { runConfig } = await import('../src/commands/config.js');
-    await runConfig({ provider: 'anthropic', model: 'claude-haiku-4-5-20241022', apiKey: 'sk-ant-test123' });
+    await runConfig({ provider: 'anthropic', model: 'claude-haiku-4-5-20251001', apiKey: 'sk-ant-test123' });
 
     const loaded = loadConfig();
     expect(loaded.provider).toBe('anthropic');
-    expect(loaded.model).toBe('claude-haiku-4-5-20241022');
+    expect(loaded.model).toBe('claude-haiku-4-5-20251001');
     expect(loaded.apiKey).toBe('sk-ant-test123');
   });
 

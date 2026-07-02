@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import type { ChildProcess } from 'child_process';
 import { checkHealth, translate, isTranslateError } from '../services/api.js';
-import { startRecording, stopRecording, isRecordingTooShort } from '../services/recorder.js';
+import { startRecording, stopRecording, isRecordingTooShort, ensureRecorderReady } from '../services/recorder.js';
 import { playAudio } from '../services/player.js';
 import { loadConfig, configExists } from '../services/configStore.js';
 import { PROVIDERS, MAX_RECORDING_MS, DEFAULT_CONFIG, type ContextTurn } from '../utils/constants.js';
@@ -14,6 +14,26 @@ import { ensureServicesRunning } from './start.js';
 
 function getTmpRecordingPath(): string {
   return path.join(os.tmpdir(), `live-translate-rec-${Date.now()}.wav`);
+}
+
+const WAV_HEADER_BYTES = 44;
+const CAPTURE_WAIT_MS = 1000;
+const CAPTURE_POLL_MS = 20;
+
+// sox opens the audio device asynchronously (CoreAudio warm-up takes 100-300 ms). The WAV file
+// growing past its header is the first reliable sign that samples are actually being captured —
+// only then is it honest to tell the user "speak now".
+async function waitForCaptureStart(filePath: string): Promise<boolean> {
+  const deadline = Date.now() + CAPTURE_WAIT_MS;
+  while (Date.now() < deadline) {
+    try {
+      if (fs.statSync(filePath).size > WAV_HEADER_BYTES) return true;
+    } catch {
+      // file not created yet
+    }
+    await new Promise(resolve => setTimeout(resolve, CAPTURE_POLL_MS));
+  }
+  return false;
 }
 
 function clearLine(): void {
@@ -77,6 +97,10 @@ export async function runTranslate(): Promise<void> {
     return;
   }
 
+  // Resolve the sox/rec binary even when services were already healthy — startServices (which
+  // normally does this) is skipped in that case, and an unresolved binary breaks bundled-sox setups.
+  await ensureRecorderReady();
+
   const config = configExists() ? loadConfig() : { ...DEFAULT_CONFIG };
   const providerDef = PROVIDERS[config.provider];
   const providerLabel = config.model ? `${providerDef.name} (${config.model})` : providerDef.name;
@@ -99,14 +123,24 @@ export async function runTranslate(): Promise<void> {
     if (maxRecordingTimeout) { clearTimeout(maxRecordingTimeout); maxRecordingTimeout = null; }
   };
 
-  const stopCurrentRecording = (): { filePath: string; durationMs: number } | null => {
-    if (!recording || !recordingPath) return null;
+  // Ask sox to stop; the recording's `close` handler reads the file once sox has flushed it.
+  // Reading before `close` races sox's WAV finalization and yields truncated audio.
+  const requestStop = (): void => {
+    if (!recording) return;
     cancelTimers();
     stopRecording(recording);
+  };
+
+  // Abandon the in-flight recording without processing it (quit/cleanup path).
+  const abortRecording = (): void => {
+    if (!recording) return;
+    cancelTimers();
+    const proc = recording;
+    const filePath = recordingPath;
     recording = null;
-    const result = { filePath: recordingPath, durationMs: Date.now() - recordingStart };
     recordingPath = null;
-    return result;
+    stopRecording(proc);
+    if (filePath) fs.rmSync(filePath, { force: true });
   };
 
   const processRecording = async (filePath: string, durationMs: number): Promise<void> => {
@@ -168,8 +202,7 @@ export async function runTranslate(): Promise<void> {
   process.stdin.setEncoding('utf8');
 
   const cleanup = (): void => {
-    cancelTimers();
-    if (recording) stopCurrentRecording();
+    abortRecording();
     process.stdin.setRawMode(false);
     process.stdin.pause();
     console.log('');
@@ -191,8 +224,22 @@ export async function runTranslate(): Promise<void> {
       recording = startRecording(recordingPath, { autoStop });
       const thisRecording = recording;
 
-      // In auto mode, sox exits on trailing silence. Treat that self-exit as a stop-and-process,
-      // unless we already stopped it manually (SPACE / max timeout / cleanup set recording elsewhere).
+      // A failed spawn (missing binary, busy device) must not crash the CLI with the terminal
+      // stuck in raw mode.
+      thisRecording.on('error', (err) => {
+        if (recording !== thisRecording) return;
+        cancelTimers();
+        const filePath = recordingPath;
+        recording = null;
+        recordingPath = null;
+        if (filePath) fs.rmSync(filePath, { force: true });
+        clearLine();
+        logger.error(`Could not start the microphone: ${err.message}`);
+        process.stdout.write(chalk.dim('  ▶ Ready\n'));
+      });
+
+      // Single processing path for every way a recording ends — manual SPACE, VAD self-exit, and
+      // the 30 s cap all just terminate sox; the file is read only after sox has flushed and closed.
       thisRecording.on('close', () => {
         if (recording !== thisRecording || !recordingPath) return;
         cancelTimers();
@@ -204,25 +251,29 @@ export async function runTranslate(): Promise<void> {
         void processRecording(filePath, durationMs);
       });
 
-      timerInterval = setInterval(() => {
-        const elapsed = ((Date.now() - recordingStart) / 1000).toFixed(1);
-        clearLine();
-        process.stdout.write(chalk.red(`  ● Recording... ${elapsed}s`));
-      }, 100);
+      clearLine();
+      process.stdout.write(chalk.dim('  ○ Starting mic...'));
+
+      void waitForCaptureStart(recordingPath).then((started) => {
+        if (recording !== thisRecording) return;
+        // Restart the clock at actual capture start so the elapsed display and the too-short
+        // check measure recorded audio, not device warm-up.
+        if (started) recordingStart = Date.now();
+        timerInterval = setInterval(() => {
+          const elapsed = ((Date.now() - recordingStart) / 1000).toFixed(1);
+          clearLine();
+          process.stdout.write(chalk.red(`  ● Recording — speak now  ${elapsed}s`));
+        }, 100);
+      });
 
       maxRecordingTimeout = setTimeout(() => {
-        const stopped = stopCurrentRecording();
-        if (stopped) {
-          clearLine();
-          process.stdout.write(chalk.yellow('  (Max 30s reached)\n'));
-          void processRecording(stopped.filePath, stopped.durationMs);
-        }
+        if (!recording) return;
+        clearLine();
+        process.stdout.write(chalk.yellow('  (Max 30s reached)\n'));
+        requestStop();
       }, MAX_RECORDING_MS);
     } else {
-      const stopped = stopCurrentRecording();
-      if (stopped) {
-        void processRecording(stopped.filePath, stopped.durationMs);
-      }
+      requestStop();
     }
   });
 }
